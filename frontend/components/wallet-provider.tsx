@@ -2,12 +2,14 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { goatTestnet } from '@/lib/network';
-
-interface EthereumProvider {
-  request(args: { method: string; params?: unknown[] | object }): Promise<unknown>;
-  on?(event: string, listener: (...args: unknown[]) => void): void;
-  removeListener?(event: string, listener: (...args: unknown[]) => void): void;
-}
+import {
+  findLegacyMetaMaskProvider,
+  isMetaMaskAnnouncement,
+  requestMetaMaskAccounts,
+  revokeMetaMaskAccounts,
+  type Eip6963ProviderDetail,
+  type EthereumProvider
+} from '@/lib/metamask';
 
 declare global {
   interface Window { ethereum?: EthereumProvider }
@@ -19,7 +21,7 @@ interface WalletState {
   isConnecting: boolean;
   error: string | null;
   connect(): Promise<void>;
-  disconnect(): void;
+  disconnect(): Promise<void>;
   switchToGoat(): Promise<void>;
   sendTransaction(transaction: { to: `0x${string}`; data: `0x${string}` }): Promise<`0x${string}`>;
   signMessage(message: string): Promise<`0x${string}`>;
@@ -35,19 +37,19 @@ function firstAddress(result: unknown): `0x${string}` | null {
 }
 
 export function WalletProvider({ children }: { children: ReactNode }) {
+  const [availableProvider, setAvailableProvider] = useState<EthereumProvider | null>(null);
+  const [provider, setProvider] = useState<EthereumProvider | null>(null);
   const [address, setAddress] = useState<`0x${string}` | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
   const [isConnecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const switchToGoat = useCallback(async () => {
-    const provider = window.ethereum;
-    if (!provider) throw new Error('Install an EVM wallet such as MetaMask.');
+  const switchProviderToGoat = useCallback(async (target: EthereumProvider) => {
     try {
-      await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: chainHex }] });
+      await target.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: chainHex }] });
     } catch (switchError) {
       if ((switchError as { code?: number }).code !== 4902) throw switchError;
-      await provider.request({
+      await target.request({
         method: 'wallet_addEthereumChain',
         params: [{
           chainId: chainHex,
@@ -61,30 +63,44 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setChainId(goatTestnet.id);
   }, []);
 
+  const switchToGoat = useCallback(async () => {
+    const target = provider ?? availableProvider ?? findLegacyMetaMaskProvider(window.ethereum);
+    if (!target) throw new Error('Install the MetaMask browser extension first.');
+    setError(null);
+    try {
+      await switchProviderToGoat(target);
+    } catch (switchError) {
+      setError(walletErrorMessage(switchError, 'Network switch failed.'));
+      throw switchError;
+    }
+  }, [availableProvider, provider, switchProviderToGoat]);
+
   const connect = useCallback(async () => {
-    const provider = window.ethereum;
-    if (!provider) {
-      setError('Install an EVM wallet such as MetaMask.');
+    const target = availableProvider ?? findLegacyMetaMaskProvider(window.ethereum);
+    if (!target) {
+      setError('Install the MetaMask browser extension first.');
       return;
     }
     setConnecting(true);
     setError(null);
     try {
-      const accounts = await provider.request({ method: 'eth_requestAccounts' });
-      setAddress(firstAddress(accounts));
-      const currentChain = await provider.request({ method: 'eth_chainId' });
+      const accounts = await requestMetaMaskAccounts(target);
+      const connectedAddress = firstAddress(accounts);
+      if (!connectedAddress) throw new Error('MetaMask did not return an account.');
+      const currentChain = await target.request({ method: 'eth_chainId' });
       const numericChain = typeof currentChain === 'string' ? Number.parseInt(currentChain, 16) : null;
+      setProvider(target);
+      setAddress(connectedAddress);
       setChainId(numericChain);
-      if (numericChain !== goatTestnet.id) await switchToGoat();
+      if (numericChain !== goatTestnet.id) await switchProviderToGoat(target);
     } catch (connectionError) {
-      setError(connectionError instanceof Error ? connectionError.message : 'Wallet connection failed.');
+      setError(walletErrorMessage(connectionError, 'MetaMask connection failed.'));
     } finally {
       setConnecting(false);
     }
-  }, [switchToGoat]);
+  }, [availableProvider, switchProviderToGoat]);
 
   const sendTransaction = useCallback(async (transaction: { to: `0x${string}`; data: `0x${string}` }) => {
-    const provider = window.ethereum;
     if (!provider || !address) throw new Error('Connect your wallet first.');
     if (chainId !== goatTestnet.id) await switchToGoat();
     const result = await provider.request({
@@ -95,39 +111,69 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       throw new Error('Wallet did not return a valid transaction hash.');
     }
     return result as `0x${string}`;
-  }, [address, chainId, switchToGoat]);
+  }, [address, chainId, provider, switchToGoat]);
 
   const signMessage = useCallback(async (message: string) => {
-    const provider = window.ethereum;
     if (!provider || !address) throw new Error('Connect your wallet first.');
     const result = await provider.request({ method: 'personal_sign', params: [message, address] });
     if (typeof result !== 'string' || !/^0x[a-fA-F0-9]{130}$/.test(result)) {
       throw new Error('Wallet did not return a valid signature.');
     }
     return result as `0x${string}`;
-  }, [address]);
+  }, [address, provider]);
 
   useEffect(() => {
-    const provider = window.ethereum;
+    const announced = (event: Event) => {
+      const detail = (event as CustomEvent<Eip6963ProviderDetail>).detail;
+      if (detail && isMetaMaskAnnouncement(detail)) {
+        setAvailableProvider((current) => current ?? detail.provider);
+        setError(null);
+      }
+    };
+    window.addEventListener('eip6963:announceProvider', announced as EventListener);
+    window.dispatchEvent(new Event('eip6963:requestProvider'));
+    const legacyProvider = findLegacyMetaMaskProvider(window.ethereum);
+    const legacyTimer = legacyProvider
+      ? window.setTimeout(() => setAvailableProvider((current) => current ?? legacyProvider), 0)
+      : null;
+    return () => {
+      window.removeEventListener('eip6963:announceProvider', announced as EventListener);
+      if (legacyTimer !== null) window.clearTimeout(legacyTimer);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!provider) return;
     const accountsChanged = (...args: unknown[]) => setAddress(firstAddress(args[0]));
     const chainChanged = (...args: unknown[]) => setChainId(typeof args[0] === 'string' ? Number.parseInt(args[0], 16) : null);
-    provider.request({ method: 'eth_accounts' }).then((accounts) => setAddress(firstAddress(accounts))).catch(() => undefined);
-    provider.request({ method: 'eth_chainId' }).then((value) => setChainId(typeof value === 'string' ? Number.parseInt(value, 16) : null)).catch(() => undefined);
     provider.on?.('accountsChanged', accountsChanged);
     provider.on?.('chainChanged', chainChanged);
     return () => {
       provider.removeListener?.('accountsChanged', accountsChanged);
       provider.removeListener?.('chainChanged', chainChanged);
     };
-  }, []);
+  }, [provider]);
+
+  const disconnect = useCallback(async () => {
+    const currentProvider = provider;
+    setProvider(null);
+    setAddress(null);
+    setChainId(null);
+    setError(null);
+    if (currentProvider) await revokeMetaMaskAccounts(currentProvider).catch(() => undefined);
+  }, [provider]);
 
   const value = useMemo<WalletState>(() => ({
     address, chainId, isConnecting, error, connect, switchToGoat, sendTransaction, signMessage,
-    disconnect: () => { setAddress(null); setError(null); }
-  }), [address, chainId, connect, error, isConnecting, sendTransaction, signMessage, switchToGoat]);
+    disconnect
+  }), [address, chainId, connect, disconnect, error, isConnecting, sendTransaction, signMessage, switchToGoat]);
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
+}
+
+function walletErrorMessage(error: unknown, fallback: string) {
+  if ((error as { code?: number } | null)?.code === 4001) return 'MetaMask request was rejected.';
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 export function useWallet() {
