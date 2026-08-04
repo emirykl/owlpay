@@ -13,12 +13,14 @@ The in-memory repository is retained for isolated local tests. Shared and produc
 ## Supabase setup
 
 1. Create a Supabase project.
-2. Run `supabase/migrations/0001_initial.sql` in the SQL editor.
+2. Run the files under `supabase/migrations` in numeric order in the SQL editor. Existing projects that already ran `0001_initial.sql` must also run `0002_github_identity.sql`.
 3. Enable GitHub under Authentication → Providers and copy the Supabase callback URL into the GitHub OAuth App.
 4. Set `PERSISTENCE_MODE=supabase`, `SUPABASE_URL` and the backend-only `SUPABASE_SECRET_KEY`.
 5. Generate a random `AGENT_API_KEY` with at least 24 characters.
 
 The Supabase secret key must never be placed in `frontend/.env.local`. Browser writes to bounty, profile and wallet-challenge tables are revoked; financial mutations go through this API.
+
+GitHub OAuth is also the authorization boundary for repository owners. OwlPay requests minimal public-profile access, forwards the short-lived provider token only to its own API, verifies that token against GitHub's immutable numeric user ID, and allows bounty creation only for public repositories where the user has push, maintain, or admin access. Provider tokens are not stored in Postgres.
 
 ## Commands
 

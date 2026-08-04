@@ -2,6 +2,7 @@ import { DomainError } from '../domain/errors.js';
 
 export interface AuthUser {
   id: string;
+  githubId: number | null;
   githubLogin: string | null;
   avatarUrl: string | null;
   identityVerified: boolean;
@@ -14,7 +15,7 @@ export interface AuthVerifier {
 
 export class DemoAuthVerifier implements AuthVerifier {
   async requireUser(): Promise<AuthUser> {
-    return { id: '00000000-0000-0000-0000-000000000000', githubLogin: 'demo-user', avatarUrl: null, identityVerified: false };
+    return { id: '00000000-0000-0000-0000-000000000000', githubId: null, githubLogin: 'demo-user', avatarUrl: null, identityVerified: false };
   }
 
   async optionalUser(): Promise<AuthUser> {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { encodeFunctionData, keccak256, parseUnits, stringToHex } from 'viem';
 import { owlpayApi } from '@/lib/api';
@@ -13,6 +13,12 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
   const { address, sendTransaction } = useWallet();
   const { configured: authConfigured, user, signIn } = useAuth();
   const queryClient = useQueryClient();
+  const repositories = useQuery({
+    queryKey: ['github-repositories', user?.id],
+    queryFn: owlpayApi.listManageableRepositories,
+    enabled: authConfigured && Boolean(user),
+    retry: false
+  });
   const [criterion, setCriterion] = useState('Existing tests must pass');
   const [minimumDeadline] = useState(() => new Date(Date.now() + 3_600_000).toISOString().slice(0, 16));
   const mutation = useMutation({
@@ -82,10 +88,23 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
           <div className="emptyState compact"><h3>Connect GitHub first</h3><p>Your GitHub identity will be bound to the bounty owner.</p><button className="secondaryButton" onClick={signIn}>Connect GitHub</button></div>
         ) : !address ? (
           <div className="emptyState compact"><h3>Connect your wallet first</h3><p>The connected address becomes the bounty owner.</p></div>
+        ) : authConfigured && repositories.isLoading ? (
+          <div className="emptyState compact"><h3>Loading your repositories…</h3><p>OwlPay is checking your public GitHub repository permissions.</p></div>
+        ) : authConfigured && repositories.isError ? (
+          <div className="emptyState compact"><h3>Reconnect GitHub</h3><p>{repositories.error.message}</p><button className="secondaryButton" onClick={signIn}>Authorize repository access</button></div>
+        ) : authConfigured && repositories.data?.items.length === 0 ? (
+          <div className="emptyState compact"><h3>No manageable public repository</h3><p>You need push, maintain, or admin access to create an MVP bounty.</p></div>
         ) : (
           <form className="bountyForm" onSubmit={submit}>
             <label><span>Title</span><input name="title" required minLength={5} maxLength={120} placeholder="Add a health endpoint" /></label>
-            <label><span>GitHub repository</span><input name="repositoryUrl" type="url" required placeholder="https://github.com/org/repository" /></label>
+            <label><span>GitHub repository</span>{authConfigured ? (
+              <select name="repositoryUrl" required defaultValue="">
+                <option value="" disabled>Select a repository</option>
+                {repositories.data?.items.map((repository) => (
+                  <option value={repository.url} key={repository.id}>{repository.fullName} · {repository.permission}</option>
+                ))}
+              </select>
+            ) : <input name="repositoryUrl" type="url" required placeholder="https://github.com/org/repository" />}</label>
             <label className="full"><span>Description</span><textarea name="description" required minLength={10} rows={3} placeholder="Describe the expected outcome and constraints." /></label>
             <label className="full"><span>Mandatory criterion</span><input value={criterion} onChange={(event) => setCriterion(event.target.value)} required minLength={3} /></label>
             <label><span>Reward · USDC</span><input name="rewardAmount" inputMode="decimal" pattern="\d+(\.\d{1,6})?" defaultValue="20" required /></label>

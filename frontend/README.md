@@ -21,3 +21,5 @@ npm run dev
 The connected wallet is forced onto GOAT Testnet3 (chain ID `48816`). A contract address is optional during local demo mode and required before enabling real testnet writes.
 
 For GitHub sign-in, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The publishable key is intentionally browser-visible and relies on the RLS policies in the backend migration. Never place a Supabase secret/service-role key in this application.
+
+In Supabase mode, the bounty form lists only active public repositories where the signed-in GitHub user has push, maintain, or admin access. If an existing session predates this permission flow, sign out and connect GitHub again to refresh the provider authorization.

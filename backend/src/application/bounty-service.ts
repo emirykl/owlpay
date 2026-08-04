@@ -16,20 +16,31 @@ export class BountyService {
     return this.repository.list();
   }
 
+  listManageableRepositories(actor: AuthUser, providerToken: string) {
+    if (!actor.identityVerified || !actor.githubId) {
+      throw new DomainError('A verified GitHub identity is required', 403, 'GITHUB_IDENTITY_REQUIRED');
+    }
+    return this.github.listManageableRepositories(providerToken, actor.githubId);
+  }
+
   async get(id: string) {
     const bounty = await this.repository.get(id);
     if (!bounty) throw new DomainError('Bounty not found', 404, 'BOUNTY_NOT_FOUND');
     return bounty;
   }
 
-  async create(input: CreateBountyInput, ownerUserId?: string): Promise<Bounty> {
+  async create(input: CreateBountyInput, actor: AuthUser, providerToken: string): Promise<Bounty> {
+    const repository = actor.identityVerified && actor.githubId
+      ? await this.github.assertCanManageRepository(input.repositoryUrl, providerToken, actor.githubId)
+      : null;
     const bounty: Bounty = {
       ...input,
+      repositoryUrl: repository?.url ?? input.repositoryUrl,
       id: randomUUID(),
       status: 'DRAFT',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      ownerUserId: actor.id
     };
-    if (ownerUserId) bounty.ownerUserId = ownerUserId;
     await this.repository.save(bounty);
     return bounty;
   }
@@ -50,11 +61,17 @@ export class BountyService {
     if (!['OPEN', 'REVISION_REQUIRED'].includes(bounty.status)) {
       throw new DomainError('Bounty is not accepting submissions');
     }
+    if (actor.identityVerified && bounty.ownerUserId === actor.id) {
+      throw new DomainError('A bounty owner cannot submit work to their own bounty', 403, 'OWNER_CANNOT_SUBMIT');
+    }
     const evidence = await this.github.getPullRequest(input.pullRequestUrl);
     if (normalizeRepository(evidence.repositoryUrl) !== normalizeRepository(bounty.repositoryUrl)) {
       throw new DomainError('Pull request belongs to a different repository', 400, 'WRONG_REPOSITORY');
     }
-    if (actor.identityVerified && (!actor.githubLogin || actor.githubLogin.toLowerCase() !== evidence.author.toLowerCase())) {
+    if (evidence.state !== 'open') {
+      throw new DomainError('The pull request must be open', 400, 'PULL_REQUEST_NOT_OPEN');
+    }
+    if (actor.identityVerified && (!actor.githubId || actor.githubId !== evidence.authorId)) {
       throw new DomainError('The signed-in GitHub user must own the pull request', 403, 'PR_OWNER_MISMATCH');
     }
     if (bounty.submission?.developerUserId && bounty.submission.developerUserId !== actor.id) {
