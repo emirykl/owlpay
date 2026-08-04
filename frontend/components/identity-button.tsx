@@ -28,11 +28,10 @@ export function IdentityButton() {
   if (!configured || !user || !address) return null;
   const linked = identity.data?.wallet.verified
     && identity.data.wallet.walletAddress?.toLowerCase() === address.toLowerCase();
-  if (linked) return <span className="identityPill"><span className="statusDot" />Linked</span>;
+  if (linked) return null;
   return (
     <button className="identityButton" onClick={() => mutation.mutate()} disabled={mutation.isPending} title={mutation.error?.message}>
       {mutation.isPending ? 'Signing…' : mutation.isError ? 'Try link again' : 'Link accounts'}
     </button>
   );
 }
-
