@@ -31,7 +31,7 @@ export function buildApp() {
   app.register(cors, {
     origin: env.FRONTEND_ORIGIN,
     methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Agent-Key']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Agent-Key', 'X-GitHub-Token']
   });
   app.register(async (routesApp) => registerRoutes(routesApp, service, auth, walletIdentity));
 

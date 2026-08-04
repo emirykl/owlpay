@@ -41,21 +41,34 @@ export interface NetworkInfo {
 }
 
 export interface CurrentIdentity {
-  user: { id: string; githubLogin: string | null; avatarUrl: string | null; identityVerified: boolean };
+  user: { id: string; githubId: number | null; githubLogin: string | null; avatarUrl: string | null; identityVerified: boolean };
   wallet: { walletAddress: string | null; verified: boolean };
+}
+
+export interface ManageableRepository {
+  id: number;
+  name: string;
+  fullName: string;
+  url: string;
+  ownerLogin: string;
+  ownerAvatarUrl: string | null;
+  permission: 'admin' | 'maintain' | 'push';
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const { getSupabaseBrowserClient } = await import('./supabase');
+async function api<T>(path: string, init?: RequestInit, githubAccess = false): Promise<T> {
+  const { getGitHubProviderToken, getSupabaseBrowserClient } = await import('./supabase');
   const client = getSupabaseBrowserClient();
-  const token = client ? (await client.auth.getSession()).data.session?.access_token : null;
+  const session = client ? (await client.auth.getSession()).data.session : null;
+  const token = session?.access_token;
+  const githubToken = session?.provider_token ?? getGitHubProviderToken();
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(githubAccess && githubToken ? { 'X-GitHub-Token': githubToken } : {}),
       ...init?.headers
     }
   });
@@ -71,6 +84,7 @@ export const owlpayApi = {
   getBounty: (id: string) => api<Bounty>(`/api/bounties/${id}`),
   network: () => api<NetworkInfo>('/api/network'),
   me: () => api<CurrentIdentity>('/api/me'),
+  listManageableRepositories: () => api<{ items: ManageableRepository[] }>('/api/github/repositories', undefined, true),
   createWalletChallenge: (address: string) => api<{ challengeId: string; message: string; expiresAt: string }>('/api/wallet/challenge', {
     method: 'POST', body: JSON.stringify({ address })
   }),
@@ -78,7 +92,7 @@ export const owlpayApi = {
     method: 'POST', body: JSON.stringify({ challengeId, signature })
   }),
   createBounty: (input: Omit<Bounty, 'id' | 'status' | 'createdAt' | 'submission'>) =>
-    api<Bounty>('/api/bounties', { method: 'POST', body: JSON.stringify(input) }),
+    api<Bounty>('/api/bounties', { method: 'POST', body: JSON.stringify(input) }, true),
   markFunded: (id: string, onchainId: string, fundingTxHash: string) =>
     api<Bounty>(`/api/bounties/${id}/funded`, {
       method: 'POST',

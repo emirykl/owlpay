@@ -15,11 +15,23 @@ export interface PullRequestEvidence {
   changedFiles: number;
   additions: number;
   deletions: number;
+  authorId: number;
   author: string;
   title: string;
 }
 
-export interface GitHubEvidenceProvider {
-  getPullRequest(url: string): Promise<PullRequestEvidence>;
+export interface ManageableRepository {
+  id: number;
+  name: string;
+  fullName: string;
+  url: string;
+  ownerLogin: string;
+  ownerAvatarUrl: string | null;
+  permission: 'admin' | 'maintain' | 'push';
 }
 
+export interface GitHubEvidenceProvider {
+  getPullRequest(url: string): Promise<PullRequestEvidence>;
+  listManageableRepositories(providerToken: string, expectedUserId: number): Promise<ManageableRepository[]>;
+  assertCanManageRepository(repositoryUrl: string, providerToken: string, expectedUserId: number): Promise<ManageableRepository>;
+}

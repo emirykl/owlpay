@@ -2,7 +2,7 @@
 
 import type { User } from '@supabase/supabase-js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { getSupabaseBrowserClient, supabaseConfigured } from '@/lib/supabase';
+import { clearGitHubProviderToken, getSupabaseBrowserClient, rememberGitHubProviderToken, supabaseConfigured } from '@/lib/supabase';
 
 interface AuthState {
   user: User | null;
@@ -22,11 +22,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const client = getSupabaseBrowserClient();
     if (!client) return;
-    client.auth.getUser().then(({ data }) => {
-      setUser(data.user);
+    client.auth.getSession().then(({ data }) => {
+      rememberGitHubProviderToken(data.session?.provider_token);
+      setUser(data.session?.user ?? null);
       setLoading(false);
     }).catch(() => setLoading(false));
-    const { data } = client.auth.onAuthStateChange((_event, session) => setUser(session?.user ?? null));
+    const { data } = client.auth.onAuthStateChange((event, session) => {
+      rememberGitHubProviderToken(session?.provider_token);
+      if (event === 'SIGNED_OUT') clearGitHubProviderToken();
+      setUser(session?.user ?? null);
+    });
     return () => data.subscription.unsubscribe();
   }, []);
 
@@ -35,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!client) return;
     const { error } = await client.auth.signInWithOAuth({
       provider: 'github',
-      options: { redirectTo: window.location.origin }
+      options: { redirectTo: window.location.origin, scopes: 'read:user' }
     });
     if (error) throw error;
   }, []);
@@ -45,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!client) return;
     const { error } = await client.auth.signOut();
     if (error) throw error;
+    clearGitHubProviderToken();
   }, []);
 
   const metadata = user?.user_metadata as Record<string, unknown> | undefined;
@@ -60,4 +66,3 @@ export function useAuth() {
   if (!value) throw new Error('useAuth must be used inside AuthProvider');
   return value;
 }
-

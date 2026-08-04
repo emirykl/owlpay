@@ -30,6 +30,11 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     return { user: actor, wallet: await walletIdentity.getStatus(actor) };
   });
 
+  app.get('/api/github/repositories', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    return { items: await service.listManageableRepositories(actor, readGitHubToken(request.headers['x-github-token'])) };
+  });
+
   app.post('/api/wallet/challenge', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
     const body = request.body as { address?: string };
@@ -66,7 +71,7 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     const actor = await auth.requireUser(request.headers.authorization);
     const input = createBountySchema.parse(request.body);
     await walletIdentity.assertLinked(actor, input.ownerAddress);
-    const bounty = await service.create(input, actor.id);
+    const bounty = await service.create(input, actor, readGitHubToken(request.headers['x-github-token']));
     return reply.code(201).send(bounty);
   });
 
@@ -96,6 +101,10 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     const input = verificationInputSchema.parse(request.body);
     return service.verify(request.params.id, input);
   });
+}
+
+function readGitHubToken(value: string | string[] | undefined) {
+  return typeof value === 'string' ? value : '';
 }
 
 function replyValidation(_request: unknown, message: string): never {

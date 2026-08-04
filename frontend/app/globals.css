@@ -18,7 +18,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-button, input, textarea { font: inherit; }
+button, input, textarea, select { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
 a { color: inherit; text-decoration: none; }
@@ -135,8 +135,9 @@ a { color: inherit; text-decoration: none; }
 .bountyForm label { display: grid; gap: 8px; }
 .bountyForm label > span { color: var(--muted); font-size: 11px; font-weight: 650; }
 .bountyForm .full { grid-column: 1 / -1; }
-.bountyForm input, .bountyForm textarea { width: 100%; border: 1px solid var(--line); background: white; color: var(--ink); border-radius: 13px; padding: 13px 14px; outline: none; transition: border .2s, box-shadow .2s; }
-.bountyForm input:focus, .bountyForm textarea:focus { border-color: #8d8f86; box-shadow: 0 0 0 4px rgba(18,19,15,.05); }
+.bountyForm input, .bountyForm textarea, .bountyForm select { width: 100%; border: 1px solid var(--line); background: white; color: var(--ink); border-radius: 13px; padding: 13px 14px; outline: none; transition: border .2s, box-shadow .2s; }
+.bountyForm select { min-height: 46px; }
+.bountyForm input:focus, .bountyForm textarea:focus, .bountyForm select:focus { border-color: #8d8f86; box-shadow: 0 0 0 4px rgba(18,19,15,.05); }
 .bountyForm textarea { resize: vertical; }
 .formActions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
 .formError { grid-column: 1 / -1; color: #a33131; background: #fff0f0; border-radius: 12px; padding: 12px; margin: 0; font-size: 12px; }
