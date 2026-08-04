@@ -12,7 +12,7 @@ export function WalletButton() {
 
   if (address) {
     return (
-      <button className="walletButton connected" onClick={disconnect} title="Disconnect wallet">
+      <button className="walletButton connected" onClick={disconnect} title="Disconnect MetaMask">
         <span className="statusDot" />
         {address?.slice(0, 5)}…{address?.slice(-4)}
       </button>
@@ -20,8 +20,8 @@ export function WalletButton() {
   }
 
   return (
-    <button className="walletButton" disabled={isConnecting} onClick={connect} title={error ?? undefined}>
-      {isConnecting ? 'Connecting…' : error ? 'Wallet unavailable' : 'Connect wallet'}
+    <button className="walletButton" disabled={isConnecting} onClick={connect} title={error ?? 'Connect with MetaMask'}>
+      {isConnecting ? 'Opening MetaMask…' : error ? 'Try MetaMask again' : 'Connect MetaMask'}
     </button>
   );
 }
