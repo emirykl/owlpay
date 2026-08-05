@@ -15,6 +15,7 @@ import { useWallet } from './wallet-provider';
 import { owlpayApi, type Bounty, type BountyStatus } from '@/lib/api';
 
 type WorkspaceView = 'overview' | 'explore' | 'owned' | 'submissions';
+type ExploreStatus = 'ALL' | 'OPEN' | 'SUBMITTED' | 'VERIFYING' | 'PAID';
 
 const statusLabels: Record<BountyStatus, string> = {
   DRAFT: 'Draft', OPEN: 'Open', SUBMITTED: 'Submitted', VERIFYING: 'Verifying',
@@ -36,6 +37,8 @@ export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explo
   const [view, setView] = useState<WorkspaceView>(initialIntent === 'explore' ? 'explore' : 'overview');
   const [creating, setCreating] = useState(initialIntent === 'create');
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
+  const [exploreQuery, setExploreQuery] = useState('');
+  const [exploreStatus, setExploreStatus] = useState<ExploreStatus>('ALL');
   const bounties = useQuery({ queryKey: ['bounties'], queryFn: owlpayApi.listBounties, retry: 1 });
   const network = useQuery({ queryKey: ['network'], queryFn: owlpayApi.network, refetchInterval: 30_000, retry: 1 });
   const items = useMemo(() => bounties.data?.items ?? [], [bounties.data?.items]);
@@ -45,11 +48,16 @@ export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explo
   }, [initialIntent]);
 
   const visibleItems = useMemo(() => {
-    if (view === 'explore') return items.filter((item) => ['OPEN', 'REVISION_REQUIRED'].includes(item.status));
+    if (view === 'explore') {
+      const query = exploreQuery.trim().toLowerCase();
+      return items.filter((item) => item.status !== 'DRAFT')
+        .filter((item) => exploreStatus === 'ALL' || item.status === exploreStatus)
+        .filter((item) => !query || `${item.title} ${item.description} ${item.repositoryUrl}`.toLowerCase().includes(query));
+    }
     if (view === 'owned') return address ? items.filter((item) => item.ownerAddress.toLowerCase() === address.toLowerCase()) : [];
     if (view === 'submissions') return address ? items.filter((item) => item.submission?.developerAddress.toLowerCase() === address.toLowerCase()) : [];
     return items.slice(0, 6);
-  }, [address, items, view]);
+  }, [address, exploreQuery, exploreStatus, items, view]);
 
   const locked = items.filter((item) => !['PAID', 'REFUNDED', 'CANCELLED'].includes(item.status)).reduce((sum, item) => sum + Number(item.rewardAmount), 0);
   const active = items.filter((item) => ['OPEN', 'SUBMITTED', 'VERIFYING', 'REVISION_REQUIRED'].includes(item.status)).length;
@@ -110,24 +118,50 @@ export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explo
             </>
           )}
 
-          <section className="appBountyPanel">
-            <div className="panelHeader"><div><h3>{view === 'overview' ? 'Recent bounties' : copy.title}</h3><span>{visibleItems.length} shown</span></div>{view === 'overview' && <button onClick={() => setView('explore')}>View marketplace <ArrowUpRight /></button>}</div>
-            {bounties.isLoading ? <div className="loadingRows"><i /><i /><i /></div> : bounties.isError ? (
-              <div className="emptyState"><h3>API is offline</h3><p>Start the backend on port 4000, then refresh this page.</p></div>
-            ) : visibleItems.length === 0 ? (
-              <EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} />
-            ) : (
-              <div className="bountyList">{visibleItems.map((bounty) => (
-                <article className="bountyRow" key={bounty.id}>
-                  <div className="repoGlyph">{bounty.title.slice(0, 1).toUpperCase()}</div>
-                  <div className="bountyName"><strong>{bounty.title}</strong><span>{bounty.repositoryUrl.replace('https://github.com/', '')}</span></div>
-                  <span className={`statusBadge status-${bounty.status.toLowerCase()}`}>{statusLabels[bounty.status]}</span>
-                  <div className="reward"><strong>{bounty.rewardAmount} USDC</strong><span>{bounty.criteria.length} {bounty.criteria.length === 1 ? 'criterion' : 'criteria'}</span></div>
-                  <button className="rowLink" onClick={() => setSelectedBounty(bounty)} aria-label={`Open ${bounty.title} details`}><ArrowUpRight /></button>
-                </article>
-              ))}</div>
-            )}
-          </section>
+          {view === 'explore' ? (
+            <section className="marketplace" aria-label="Public bounty marketplace">
+              <div className="marketplaceToolbar">
+                <label className="marketplaceSearch"><span>⌕</span><input value={exploreQuery} onChange={(event) => setExploreQuery(event.target.value)} placeholder="Search bounties or repositories" aria-label="Search bounties" /></label>
+                <div className="marketplaceFilters" aria-label="Filter by status">
+                  {(['ALL', 'OPEN', 'SUBMITTED', 'VERIFYING', 'PAID'] as ExploreStatus[]).map((status) => <button className={exploreStatus === status ? 'active' : ''} onClick={() => setExploreStatus(status)} key={status}>{status === 'ALL' ? 'All' : statusLabels[status]}</button>)}
+                </div>
+                <span className="marketplaceCount">{visibleItems.length} bounties</span>
+              </div>
+              {bounties.isLoading ? <div className="marketplaceLoading loadingRows"><i /><i /><i /></div> : bounties.isError ? (
+                <div className="marketplaceEmpty emptyState"><h3>API is offline</h3><p>Start the backend on port 4000, then refresh this page.</p></div>
+              ) : visibleItems.length === 0 ? (
+                <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
+              ) : (
+                <div className="marketplaceGrid">{visibleItems.map((bounty) => (
+                  <motion.button className="marketplaceCard" key={bounty.id} onClick={() => setSelectedBounty(bounty)} whileHover={reduceMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.995 }}>
+                    <div className="marketplaceCardTop"><div className="marketplaceRepo"><span className="repoGlyph">{bounty.title.slice(0, 1).toUpperCase()}</span><span>{bounty.repositoryUrl.replace('https://github.com/', '')}</span></div><span className={`statusBadge status-${bounty.status.toLowerCase()}`}>{statusLabels[bounty.status]}</span></div>
+                    <div className="marketplaceCardBody"><h2>{bounty.title}</h2><p>{bounty.description}</p></div>
+                    <div className="marketplaceCriterion"><span>Acceptance</span><strong>{bounty.criteria[0]?.description ?? 'Criteria available in details'}</strong></div>
+                    <div className="marketplaceCardFooter"><div><strong>{bounty.rewardAmount} USDC</strong><span>{bounty.criteria.length} {bounty.criteria.length === 1 ? 'criterion' : 'criteria'}</span></div><div><span>Deadline</span><strong>{new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(new Date(bounty.deadline))}</strong></div><ArrowUpRight /></div>
+                  </motion.button>
+                ))}</div>
+              )}
+            </section>
+          ) : (
+            <section className="appBountyPanel">
+              <div className="panelHeader"><div><h3>{view === 'overview' ? 'Recent bounties' : copy.title}</h3><span>{visibleItems.length} shown</span></div>{view === 'overview' && <button onClick={() => setView('explore')}>View marketplace <ArrowUpRight /></button>}</div>
+              {bounties.isLoading ? <div className="loadingRows"><i /><i /><i /></div> : bounties.isError ? (
+                <div className="emptyState"><h3>API is offline</h3><p>Start the backend on port 4000, then refresh this page.</p></div>
+              ) : visibleItems.length === 0 ? (
+                <EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} />
+              ) : (
+                <div className="bountyList">{visibleItems.map((bounty) => (
+                  <article className="bountyRow" key={bounty.id}>
+                    <div className="repoGlyph">{bounty.title.slice(0, 1).toUpperCase()}</div>
+                    <div className="bountyName"><strong>{bounty.title}</strong><span>{bounty.repositoryUrl.replace('https://github.com/', '')}</span></div>
+                    <span className={`statusBadge status-${bounty.status.toLowerCase()}`}>{statusLabels[bounty.status]}</span>
+                    <div className="reward"><strong>{bounty.rewardAmount} USDC</strong><span>{bounty.criteria.length} {bounty.criteria.length === 1 ? 'criterion' : 'criteria'}</span></div>
+                    <button className="rowLink" onClick={() => setSelectedBounty(bounty)} aria-label={`Open ${bounty.title} details`}><ArrowUpRight /></button>
+                  </article>
+                ))}</div>
+              )}
+            </section>
+          )}
         </motion.section>
       </div>
 
