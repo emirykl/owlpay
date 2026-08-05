@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { motion, useReducedMotion } from 'motion/react';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, OwlMark } from './icons';
+import { ArrowUpRight, Calendar, OwlMark, Users } from './icons';
 import { WalletButton } from './wallet-button';
 import { CreateBounty } from './create-bounty';
 import { BountyDetail } from './bounty-detail';
@@ -29,6 +29,23 @@ const viewCopy: Record<WorkspaceView, { eyebrow: string; title: string; copy: st
   owned: { eyebrow: 'Repository owner', title: 'My bounties', copy: 'Track work you created and funded.' },
   submissions: { eyebrow: 'Developer', title: 'My submissions', copy: 'Follow your pull requests and verification results.' }
 };
+
+function repositoryMeta(repositoryUrl: string) {
+  try {
+    const [, owner = 'github', repository = 'repository'] = new URL(repositoryUrl).pathname.split('/');
+    return { owner, fullName: `${owner}/${repository}`, avatarUrl: `https://github.com/${owner}.png?size=96` };
+  } catch {
+    return { owner: 'github', fullName: repositoryUrl, avatarUrl: 'https://github.com/github.png?size=96' };
+  }
+}
+
+function remainingTime(deadline: string) {
+  const days = Math.ceil((new Date(deadline).getTime() - Date.now()) / 86_400_000);
+  if (days < 0) return 'Ended';
+  if (days === 0) return 'Ends today';
+  if (days === 1) return '1 day left';
+  return `${days} days left`;
+}
 
 export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explore' }) {
   const reduceMotion = useReducedMotion();
@@ -132,14 +149,25 @@ export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explo
               ) : visibleItems.length === 0 ? (
                 <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
               ) : (
-                <div className="marketplaceGrid">{visibleItems.map((bounty) => (
-                  <motion.button className="marketplaceCard" key={bounty.id} onClick={() => setSelectedBounty(bounty)} whileHover={reduceMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.995 }}>
-                    <div className="marketplaceCardTop"><div className="marketplaceRepo"><span className="repoGlyph">{bounty.title.slice(0, 1).toUpperCase()}</span><span>{bounty.repositoryUrl.replace('https://github.com/', '')}</span></div><span className={`statusBadge status-${bounty.status.toLowerCase()}`}>{statusLabels[bounty.status]}</span></div>
-                    <div className="marketplaceCardBody"><h2>{bounty.title}</h2><p>{bounty.description}</p></div>
-                    <div className="marketplaceCriterion"><span>Acceptance</span><strong>{bounty.criteria[0]?.description ?? 'Criteria available in details'}</strong></div>
-                    <div className="marketplaceCardFooter"><div><strong>{bounty.rewardAmount} USDC</strong><span>{bounty.criteria.length} {bounty.criteria.length === 1 ? 'criterion' : 'criteria'}</span></div><div><span>Deadline</span><strong>{new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(new Date(bounty.deadline))}</strong></div><ArrowUpRight /></div>
-                  </motion.button>
-                ))}</div>
+                <div className="marketplaceGrid">{visibleItems.map((bounty) => {
+                  const repository = repositoryMeta(bounty.repositoryUrl);
+                  const applicants = bounty.submission ? 1 : 0;
+                  return (
+                    <motion.button className="marketplaceCard" key={bounty.id} onClick={() => setSelectedBounty(bounty)} whileHover={reduceMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.995 }}>
+                      <div className="marketplaceCardTop">
+                        <div className="marketplaceRepo"><span className="marketplaceAvatar" role="img" aria-label={`${repository.owner} GitHub avatar`} style={{ backgroundImage: `url(${repository.avatarUrl})` }}>{repository.owner.slice(0, 1).toUpperCase()}</span><strong>{repository.fullName}</strong></div>
+                        <span className="marketplaceReward">{bounty.rewardAmount} USDC</span>
+                      </div>
+                      <div className="marketplaceCardBody"><h2>{bounty.title}</h2><p>{bounty.description}</p></div>
+                      <div className="marketplaceTags"><span className={`statusBadge status-${bounty.status.toLowerCase()}`}>{statusLabels[bounty.status]}</span>{bounty.criteria.slice(0, 2).map((criterion) => <span key={criterion.id}>{criterion.method.replace('-', ' ')}</span>)}</div>
+                      <div className="marketplaceCardFooter">
+                        <div><span className="metaIcon"><Users /></span><strong>{applicants}</strong><span>{applicants === 1 ? 'applicant' : 'applicants'}</span></div>
+                        <div><span className="metaIcon"><Calendar /></span><strong>{remainingTime(bounty.deadline)}</strong></div>
+                        <ArrowUpRight />
+                      </div>
+                    </motion.button>
+                  );
+                })}</div>
               )}
             </section>
           ) : (
