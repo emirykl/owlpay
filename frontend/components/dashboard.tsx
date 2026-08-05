@@ -59,7 +59,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
   const [exploreQuery, setExploreQuery] = useState('');
   const [exploreStatus, setExploreStatus] = useState<ExploreStatus>('ALL');
-  const [exploreRepository, setExploreRepository] = useState('ALL');
+  const [exploreRepository, setExploreRepository] = useState('');
   const [exploreSort, setExploreSort] = useState<ExploreSort>('RECENT');
   const bounties = useQuery({ queryKey: ['bounties'], queryFn: owlpayApi.listBounties, retry: 1 });
   const myApplications = useQuery({ queryKey: ['my-applications', user?.id], queryFn: owlpayApi.listMyApplications, enabled: view === 'applications' && Boolean(user), retry: false });
@@ -85,9 +85,10 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
   const visibleItems = useMemo(() => {
     if (view === 'explore') {
       const query = exploreQuery.trim().toLowerCase();
+      const repositoryQuery = exploreRepository.trim().toLowerCase();
       return publicItems
         .filter((item) => exploreStatus === 'ALL' || item.status === exploreStatus)
-        .filter((item) => exploreRepository === 'ALL' || item.repositoryUrl === exploreRepository)
+        .filter((item) => !repositoryQuery || repositoryMeta(item.repositoryUrl).fullName.toLowerCase().includes(repositoryQuery))
         .filter((item) => !query || `${item.title} ${item.description} ${item.repositoryUrl}`.toLowerCase().includes(query))
         .sort((a, b) => {
           if (exploreSort === 'REWARD_HIGH') return Number(b.rewardAmount) - Number(a.rewardAmount);
@@ -123,7 +124,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
 
       <div className="workspaceBody">
         <header className="appHeader">
-          <div className="appHeaderTitle"><strong>{copy.title}</strong>{view === 'explore' && <span>{publicItems.length} total</span>}</div>
+          <div className="appHeaderTitle"><strong>{copy.title}</strong></div>
           <div className="appHeaderActions">
             {view === 'explore' && <button className="headerNewBounty" onClick={() => setCreating(true)}>New bounty <span>＋</span></button>}
             <div className="appConnections"><AuthButton /><WalletButton /><IdentityButton /></div>
@@ -184,7 +185,6 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
             <section className="marketplace" aria-label="Public bounty marketplace">
               <div className="marketplaceLayout">
                 <div className="marketplaceResults">
-                  <div className="marketplaceResultCount"><strong>{visibleItems.length}</strong> {visibleItems.length === 1 ? 'bounty' : 'bounties'}</div>
                   {bounties.isLoading ? <div className="marketplaceLoading loadingRows"><i /><i /><i /></div> : bounties.isError ? (
                     <div className="marketplaceEmpty emptyState"><h3>API is offline</h3><p>Start the backend on port 4000, then refresh this page.</p></div>
                   ) : visibleItems.length === 0 ? (
@@ -213,11 +213,11 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
                 <aside className="marketplaceSidebar" aria-label="Bounty filters">
                   <div className="marketplaceTotal"><span>Total bounties</span><strong>{publicItems.length}</strong></div>
                   <div className="marketplaceFilterPanel">
-                    <div className="filterPanelHeader"><span>Filters</span>{(exploreQuery || exploreStatus !== 'ALL' || exploreRepository !== 'ALL' || exploreSort !== 'RECENT') && <button onClick={() => { setExploreQuery(''); setExploreStatus('ALL'); setExploreRepository('ALL'); setExploreSort('RECENT'); }}>Reset</button>}</div>
+                    <div className="filterPanelHeader"><span>Filters</span>{(exploreQuery || exploreStatus !== 'ALL' || exploreRepository || exploreSort !== 'RECENT') && <button onClick={() => { setExploreQuery(''); setExploreStatus('ALL'); setExploreRepository(''); setExploreSort('RECENT'); }}>Reset</button>}</div>
                     <label className="filterSearch"><span>⌕</span><input value={exploreQuery} onChange={(event) => setExploreQuery(event.target.value)} placeholder="Search by title" aria-label="Search bounties" /></label>
                     <i className="filterDivider" />
                     <label className="filterField"><span>Status</span><select value={exploreStatus} onChange={(event) => setExploreStatus(event.target.value as ExploreStatus)}>{exploreStatuses.map((status) => <option key={status} value={status}>{status === 'ALL' ? 'All statuses' : statusLabels[status]}</option>)}</select></label>
-                    <label className="filterField"><span>Repository</span><select value={exploreRepository} onChange={(event) => setExploreRepository(event.target.value)}><option value="ALL">All repositories</option>{repositories.map(([url, name]) => <option key={url} value={url}>{name}</option>)}</select></label>
+                    <label className="filterField"><span>Repository</span><input list="bounty-repositories" value={exploreRepository} onChange={(event) => setExploreRepository(event.target.value)} placeholder="All repositories" aria-label="Filter by repository" /><datalist id="bounty-repositories">{repositories.map(([url, name]) => <option key={url} value={name} />)}</datalist></label>
                     <label className="filterField"><span>Sort by</span><select value={exploreSort} onChange={(event) => setExploreSort(event.target.value as ExploreSort)}><option value="RECENT">Most recent</option><option value="REWARD_HIGH">Highest reward</option><option value="DEADLINE">Deadline soonest</option></select></label>
                   </div>
                 </aside>
