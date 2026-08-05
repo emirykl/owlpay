@@ -52,6 +52,7 @@ function remainingTime(deadline: string) {
 export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'create' | 'explore'; initialView?: WorkspaceView }) {
   const reduceMotion = useReducedMotion();
   const { user, signIn } = useAuth();
+  const userId = user?.id;
   const { address } = useWallet();
   const [view, setView] = useState<WorkspaceView>(initialView ?? 'explore');
   const [creating, setCreating] = useState(initialIntent === 'create');
@@ -61,7 +62,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
   const [exploreRepository, setExploreRepository] = useState('');
   const [exploreSort, setExploreSort] = useState<ExploreSort>('RECENT');
   const bounties = useQuery({ queryKey: ['bounties'], queryFn: owlpayApi.listBounties, retry: 1 });
-  const myApplications = useQuery({ queryKey: ['my-applications', user?.id], queryFn: owlpayApi.listMyApplications, enabled: view === 'applications' && Boolean(user), retry: false });
+  const myApplications = useQuery({ queryKey: ['my-applications', userId], queryFn: owlpayApi.listMyApplications, enabled: view === 'applications' && Boolean(userId), retry: false });
   const network = useQuery({ queryKey: ['network'], queryFn: owlpayApi.network, refetchInterval: 30_000, retry: 1 });
   const items = useMemo(() => bounties.data?.items ?? [], [bounties.data?.items]);
   const publicItems = useMemo(() => items.filter((item) => item.status !== 'DRAFT'), [items]);
@@ -95,9 +96,12 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         });
     }
-    if (view === 'owned') return address ? items.filter((item) => item.ownerAddress.toLowerCase() === address.toLowerCase()) : [];
+    if (view === 'owned') return items.filter((item) => (
+      Boolean(userId && item.ownerUserId === userId)
+      || Boolean(address && item.ownerAddress.toLowerCase() === address.toLowerCase())
+    ));
     return [];
-  }, [address, exploreQuery, exploreRepository, exploreSort, exploreStatus, items, publicItems, view]);
+  }, [address, exploreQuery, exploreRepository, exploreSort, exploreStatus, items, publicItems, userId, view]);
 
   const copy = viewCopy[view];
 
@@ -122,15 +126,14 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
         <header className="appHeader">
           <div className="appHeaderTitle"><strong>{copy.title}</strong></div>
           <div className="appHeaderActions">
-            {view === 'explore' && <button className="headerNewBounty" onClick={() => setCreating(true)}>New bounty <span>＋</span></button>}
+            {view !== 'applications' && <button className="headerNewBounty" onClick={() => setCreating(true)}>New bounty <span>＋</span></button>}
             <div className="appConnections"><AuthButton /><WalletButton /><IdentityButton /></div>
           </div>
         </header>
 
-        <motion.section className={`workspaceContent ${view === 'explore' ? 'exploreWorkspace' : ''}`} key={view} initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}>
-          {view !== 'explore' && <div className="workspaceHeading">
+        <motion.section className={`workspaceContent ${view !== 'applications' ? 'exploreWorkspace' : ''}`} key={view} initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}>
+          {view === 'applications' && <div className="workspaceHeading">
             <div><span className="eyebrow">{copy.eyebrow}</span><h1>{copy.title}</h1><p>{copy.copy}</p></div>
-            {view !== 'applications' && <button className="primaryButton appPrimary" onClick={() => setCreating(true)}>New bounty <span>＋</span></button>}
           </div>}
 
           {view === 'applications' ? (
@@ -161,23 +164,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
                   ) : visibleItems.length === 0 ? (
                     <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
                   ) : (
-                    <div className="marketplaceGrid">{visibleItems.map((bounty) => {
-                      const repository = repositoryMeta(bounty.repositoryUrl);
-                      const applicants = bounty.applicantCount;
-                      return (
-                        <motion.button className="marketplaceCard" key={bounty.id} onClick={() => setSelectedBounty(bounty)} whileHover={reduceMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.995 }}>
-                          <div className="marketplaceCardTop">
-                            <div className="marketplaceRepo"><span className="marketplaceAvatar" role="img" aria-label={`${repository.owner} GitHub avatar`} style={{ backgroundImage: `url(${repository.avatarUrl})` }}>{repository.owner.slice(0, 1).toUpperCase()}</span><strong>{repository.fullName}</strong></div>
-                            <div className="marketplaceCardPills"><span className={`statusBadge status-${bounty.status.toLowerCase()}`}>{statusLabels[bounty.status]}</span><span className="marketplaceReward">{bounty.rewardAmount} USDC</span></div>
-                          </div>
-                          <div className="marketplaceCardBody"><h2>{bounty.title}</h2><p>{bounty.description}</p></div>
-                          <div className="marketplaceCardFooter">
-                            <div><span className="metaIcon"><Users /></span><strong>{applicants}</strong><span>{applicants === 1 ? 'applicant' : 'applicants'}</span></div>
-                            <div><span className="metaIcon"><Calendar /></span><strong>{remainingTime(bounty.deadline)}</strong></div>
-                          </div>
-                        </motion.button>
-                      );
-                    })}</div>
+                    <div className="marketplaceGrid">{visibleItems.map((bounty) => <MarketplaceBountyCard bounty={bounty} key={bounty.id} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} />)}</div>
                   )}
                 </div>
 
@@ -195,22 +182,13 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
               </div>
             </section>
           ) : (
-            <section className="appBountyPanel">
-              <div className="panelHeader"><div><h3>{copy.title}</h3><span>{visibleItems.length} shown</span></div></div>
+            <section className="ownedMarketplace" aria-label="Your bounties">
               {bounties.isLoading ? <div className="loadingRows"><i /><i /><i /></div> : bounties.isError ? (
-                <div className="emptyState"><h3>API is offline</h3><p>Start the backend on port 4000, then refresh this page.</p></div>
+                <div className="marketplaceEmpty emptyState"><h3>API is offline</h3><p>Start the backend on port 4000, then refresh this page.</p></div>
               ) : visibleItems.length === 0 ? (
-                <EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} />
+                <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
               ) : (
-                <div className="bountyList">{visibleItems.map((bounty) => (
-                  <article className="bountyRow" key={bounty.id}>
-                    <div className="repoGlyph">{bounty.title.slice(0, 1).toUpperCase()}</div>
-                    <div className="bountyName"><strong>{bounty.title}</strong><span>{bounty.repositoryUrl.replace('https://github.com/', '')}</span></div>
-                    <span className={`statusBadge status-${bounty.status.toLowerCase()}`}>{statusLabels[bounty.status]}</span>
-                    <div className="reward"><strong>{bounty.rewardAmount} USDC</strong><span>{bounty.criteria.length} {bounty.criteria.length === 1 ? 'criterion' : 'criteria'}</span></div>
-                    <button className="rowLink" onClick={() => setSelectedBounty(bounty)} aria-label={`Open ${bounty.title} details`}><ArrowUpRight /></button>
-                  </article>
-                ))}</div>
+                <div className="marketplaceGrid">{visibleItems.map((bounty) => <MarketplaceBountyCard bounty={bounty} key={bounty.id} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} />)}</div>
               )}
             </section>
           )}
@@ -220,6 +198,25 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
       {creating && <CreateBounty onClose={() => setCreating(false)} />}
       {selectedBounty && <BountyDetail initialBounty={selectedBounty} onClose={() => setSelectedBounty(null)} />}
     </main>
+  );
+}
+
+function MarketplaceBountyCard({ bounty, onOpen, reduceMotion }: { bounty: Bounty; onOpen: () => void; reduceMotion: boolean | null }) {
+  const repository = repositoryMeta(bounty.repositoryUrl);
+  const applicants = bounty.applicantCount;
+
+  return (
+    <motion.button className="marketplaceCard" onClick={onOpen} whileHover={reduceMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.995 }}>
+      <div className="marketplaceCardTop">
+        <div className="marketplaceRepo"><span className="marketplaceAvatar" role="img" aria-label={`${repository.owner} GitHub avatar`} style={{ backgroundImage: `url(${repository.avatarUrl})` }}>{repository.owner.slice(0, 1).toUpperCase()}</span><strong>{repository.fullName}</strong></div>
+        <div className="marketplaceCardPills"><span className={`statusBadge status-${bounty.status.toLowerCase()}`}>{statusLabels[bounty.status]}</span><span className="marketplaceReward">{bounty.rewardAmount} USDC</span></div>
+      </div>
+      <div className="marketplaceCardBody"><h2>{bounty.title}</h2><p>{bounty.description}</p></div>
+      <div className="marketplaceCardFooter">
+        <div><span className="metaIcon"><Users /></span><strong>{applicants}</strong><span>{applicants === 1 ? 'applicant' : 'applicants'}</span></div>
+        <div><span className="metaIcon"><Calendar /></span><strong>{remainingTime(bounty.deadline)}</strong></div>
+      </div>
+    </motion.button>
   );
 }
 
