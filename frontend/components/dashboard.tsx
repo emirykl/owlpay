@@ -14,7 +14,7 @@ import { useAuth } from './auth-provider';
 import { useWallet } from './wallet-provider';
 import { owlpayApi, type Bounty, type BountyStatus } from '@/lib/api';
 
-type WorkspaceView = 'overview' | 'explore' | 'owned' | 'applications';
+type WorkspaceView = 'explore' | 'owned' | 'applications';
 type ExploreStatus = 'ALL' | BountyStatus;
 type ExploreSort = 'RECENT' | 'REWARD_HIGH' | 'DEADLINE';
 
@@ -27,7 +27,6 @@ const statusLabels: Record<BountyStatus, string> = {
 };
 
 const viewCopy: Record<WorkspaceView, { eyebrow: string; title: string; copy: string }> = {
-  overview: { eyebrow: 'OwlPay workspace', title: 'Overview', copy: 'Choose an action or continue where you left off.' },
   explore: { eyebrow: 'Marketplace', title: 'Explore bounties', copy: 'Open work with clear criteria and visible rewards.' },
   owned: { eyebrow: 'Repository owner', title: 'My bounties', copy: 'Track work you created and funded.' },
   applications: { eyebrow: 'Developer', title: 'My applications', copy: 'Track your applications, assignments, and submitted work.' }
@@ -50,11 +49,11 @@ function remainingTime(deadline: string) {
   return `${days} days left`;
 }
 
-export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'create' | 'explore'; initialView?: Exclude<WorkspaceView, 'overview'> }) {
+export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'create' | 'explore'; initialView?: WorkspaceView }) {
   const reduceMotion = useReducedMotion();
-  const { configured: authConfigured, user, githubLogin, signIn } = useAuth();
+  const { user, signIn } = useAuth();
   const { address } = useWallet();
-  const [view, setView] = useState<WorkspaceView>(initialIntent === 'explore' ? 'explore' : initialView ?? 'overview');
+  const [view, setView] = useState<WorkspaceView>(initialView ?? 'explore');
   const [creating, setCreating] = useState(initialIntent === 'create');
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
   const [exploreQuery, setExploreQuery] = useState('');
@@ -77,7 +76,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
 
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (view === 'overview') url.searchParams.delete('view');
+    if (view === 'explore') url.searchParams.delete('view');
     else url.searchParams.set('view', view);
     window.history.replaceState(null, '', `${url.pathname}${url.search}`);
   }, [view]);
@@ -97,11 +96,9 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
         });
     }
     if (view === 'owned') return address ? items.filter((item) => item.ownerAddress.toLowerCase() === address.toLowerCase()) : [];
-    return items.slice(0, 6);
+    return [];
   }, [address, exploreQuery, exploreRepository, exploreSort, exploreStatus, items, publicItems, view]);
 
-  const locked = items.filter((item) => !['PAID', 'REFUNDED', 'CANCELLED'].includes(item.status)).reduce((sum, item) => sum + Number(item.rewardAmount), 0);
-  const active = items.filter((item) => ['OPEN', 'ASSIGNED', 'SUBMITTED', 'VERIFYING', 'READY_FOR_REVIEW', 'REVISION_REQUIRED'].includes(item.status)).length;
   const copy = viewCopy[view];
 
   return (
@@ -110,7 +107,6 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
         <Link className="brand appBrand" href="/" aria-label="OwlPay landing page"><OwlMark className="brandMark" /><span>OwlPay</span></Link>
         <nav className="appNavigation" aria-label="Workspace navigation">
           {([
-            ['overview', 'Overview'],
             ['explore', 'Explore'],
             ['owned', 'My bounties'],
             ['applications', 'My applications']
@@ -136,31 +132,6 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
             <div><span className="eyebrow">{copy.eyebrow}</span><h1>{copy.title}</h1><p>{copy.copy}</p></div>
             {view !== 'applications' && <button className="primaryButton appPrimary" onClick={() => setCreating(true)}>New bounty <span>＋</span></button>}
           </div>}
-
-          {view === 'overview' && (
-            <>
-              {authConfigured && !githubLogin && (
-                <button className="connectionHint" onClick={signIn}><span className="providerMark githubMark"><GitHubMark /></span><span>Connect GitHub to create or submit work.</span><strong>Connect</strong></button>
-              )}
-
-              <section className="quickActions" aria-label="Quick actions">
-                <motion.button className="quickAction" whileHover={reduceMotion ? undefined : { y: -2 }} whileTap={{ scale: 0.99 }} onClick={() => setCreating(true)}>
-                  <span className="quickActionIcon">＋</span><div><strong>Create bounty</strong><small>Fund repository work</small></div><ArrowUpRight />
-                </motion.button>
-                <motion.button className="quickAction" whileHover={reduceMotion ? undefined : { y: -2 }} whileTap={{ scale: 0.99 }} onClick={() => setView('explore')}>
-                  <span className="quickActionIcon exploreIcon">⌕</span><div><strong>Explore bounties</strong><small>Find open work</small></div><ArrowUpRight />
-                </motion.button>
-              </section>
-
-              <div className="compactStats" aria-label="Workspace status">
-                <div><strong>{active}</strong><span>active</span></div>
-                <i />
-                <div><strong>{locked.toFixed(2)}</strong><span>USDC locked</span></div>
-                <i />
-                <div><span className={`statusDot ${network.data?.status.connected ? '' : 'offline'}`} /><strong>{network.data?.status.connected ? 'Online' : 'Checking'}</strong><span>network</span></div>
-              </div>
-            </>
-          )}
 
           {view === 'applications' ? (
             <section className="applicationWorkspace">
@@ -225,7 +196,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
             </section>
           ) : (
             <section className="appBountyPanel">
-              <div className="panelHeader"><div><h3>{view === 'overview' ? 'Recent bounties' : copy.title}</h3><span>{visibleItems.length} shown</span></div>{view === 'overview' && <button onClick={() => setView('explore')}>View marketplace <ArrowUpRight /></button>}</div>
+              <div className="panelHeader"><div><h3>{copy.title}</h3><span>{visibleItems.length} shown</span></div></div>
               {bounties.isLoading ? <div className="loadingRows"><i /><i /><i /></div> : bounties.isError ? (
                 <div className="emptyState"><h3>API is offline</h3><p>Start the backend on port 4000, then refresh this page.</p></div>
               ) : visibleItems.length === 0 ? (
