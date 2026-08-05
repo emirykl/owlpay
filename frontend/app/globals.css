@@ -328,44 +328,45 @@ a { color: inherit; text-decoration: none; }
 .marketplaceLayout { display: grid; grid-template-columns: minmax(0,1fr) 242px; align-items: start; gap: 18px; }
 .marketplaceResults { min-width: 0; }
 .marketplaceGrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
-.marketplaceCard { min-height: 218px; padding: 17px; border: 1px solid rgba(255,255,255,.94); border-radius: 18px; background: rgba(255,255,252,.78); color: var(--ink); text-align: left; box-shadow: 0 1px 2px rgba(18,19,15,.02),0 10px 28px rgba(18,19,15,.035); backdrop-filter: blur(20px); display: flex; flex-direction: column; transition: background .2s,border-color .2s,box-shadow .2s; }
+.marketplaceCard { min-height: 244px; padding: 22px; border: 1px solid rgba(255,255,255,.94); border-radius: 18px; background: rgba(255,255,252,.78); color: var(--ink); text-align: left; box-shadow: 0 1px 2px rgba(18,19,15,.02),0 10px 28px rgba(18,19,15,.035); backdrop-filter: blur(20px); display: flex; flex-direction: column; transition: background .2s,border-color .2s,box-shadow .2s; }
 .marketplaceCard:hover { background: rgba(255,255,255,.94); border-color: rgba(18,19,15,.09); box-shadow: 0 2px 3px rgba(18,19,15,.025),0 18px 42px rgba(18,19,15,.055); }
 .marketplaceCardTop { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.marketplaceRepo { min-width: 0; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 10px; }
-.marketplaceRepo > strong { overflow: hidden; color: var(--muted); font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.marketplaceAvatar { width: 32px; height: 32px; flex: 0 0 auto; border-radius: 50%; background-color: #e7e8e2; background-position: center; background-size: cover; display: grid; place-items: center; color: var(--muted); font-size: 9px; font-weight: 750; box-shadow: inset 0 0 0 1px rgba(18,19,15,.06); }
+.marketplaceRepo { min-width: 0; display: flex; align-items: center; gap: 11px; color: var(--muted); font-size: 13px; }
+.marketplaceRepo > strong { overflow: hidden; color: var(--ink); font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.marketplaceAvatar { width: 38px; height: 38px; flex: 0 0 auto; border-radius: 50%; background-color: #e7e8e2; background-position: center; background-size: cover; display: grid; place-items: center; color: var(--muted); font-size: 11px; font-weight: 750; box-shadow: inset 0 0 0 1px rgba(18,19,15,.06); }
 .marketplaceCardPills { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; }
-.marketplaceCardPills .statusBadge,.marketplaceReward { padding: 6px 8px; font-size: 8px; }
+.marketplaceCardPills .statusBadge,.marketplaceReward { padding: 7px 10px; font-size: 11px; }
 .marketplaceReward { flex: 0 0 auto; border-radius: 999px; background: #edf5ef; color: var(--green); font-weight: 750; white-space: nowrap; }
-.marketplaceCardBody { padding: 20px 0 14px; }
-.marketplaceCardBody h2 { margin: 0; font-size: 16px; line-height: 1.25; letter-spacing: -.035em; }
-.marketplaceCardBody p { margin: 8px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.marketplaceCardFooter { margin-top: auto; padding-top: 13px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 15px; }
+.marketplaceCardBody { padding: 23px 0 17px; }
+.marketplaceCardBody h2 { margin: 0; font-size: 21px; line-height: 1.2; letter-spacing: -.035em; }
+.marketplaceCardBody p { margin: 10px 0 0; color: #60635c; font-size: 14px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.marketplaceCardFooter { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 19px; }
 .marketplaceCardFooter > div { display: flex; align-items: center; gap: 5px; }
 .marketplaceCardFooter > div:nth-child(2) { margin-left: 4px; text-align: left; }
-.marketplaceCardFooter strong { font-size: 9px; }
-.marketplaceCardFooter span { color: var(--muted); font-size: 8px; }
-.marketplaceCardFooter .metaIcon { width: 15px; height: 15px; display: grid; place-items: center; }
-.marketplaceCardFooter .metaIcon svg { width: 15px; }
+.marketplaceCardFooter strong { color: var(--ink); font-size: 13px; }
+.marketplaceCardFooter span { color: #60635c; font-size: 12px; }
+.marketplaceCardFooter .metaIcon { width: 18px; height: 18px; display: grid; place-items: center; }
+.marketplaceCardFooter .metaIcon svg { width: 18px; }
 .marketplaceEmpty,.marketplaceLoading { min-height: 320px; border: 1px solid rgba(255,255,255,.9); border-radius: 20px; background: rgba(255,255,252,.64); }
 .marketplaceSidebar { position: sticky; top: 104px; display: grid; gap: 10px; }
 .marketplaceTotal,.marketplaceFilterPanel { border: 1px solid rgba(255,255,255,.94); background: rgba(255,255,252,.75); box-shadow: 0 1px 2px rgba(18,19,15,.02),0 10px 28px rgba(18,19,15,.03); backdrop-filter: blur(20px); }
 .marketplaceTotal { min-height: 112px; padding: 19px; border-radius: 18px; display: flex; flex-direction: column; justify-content: space-between; }
 .marketplaceTotal span,.filterPanelHeader > span { color: var(--muted); font-size: 8px; font-weight: 750; text-transform: uppercase; letter-spacing: .09em; }
 .marketplaceTotal strong { font-size: 34px; line-height: 1; letter-spacing: -.055em; }
-.marketplaceFilterPanel { padding: 19px; border-radius: 18px; display: grid; gap: 15px; }
+.marketplaceFilterPanel { min-height: 420px; padding: 24px 19px; border-radius: 18px; display: flex; flex-direction: column; gap: 20px; }
 .filterPanelHeader { display: flex; align-items: center; justify-content: space-between; }
-.filterPanelHeader button { padding: 0; border: 0; background: transparent; color: var(--green); font-size: 8px; font-weight: 700; }
-.filterSearch { height: 40px; padding: 0 11px; border: 1px solid var(--line); border-radius: 11px; background: rgba(255,255,255,.7); display: flex; align-items: center; gap: 8px; }
-.filterSearch > span { color: var(--muted); font-size: 18px; }
-.filterSearch input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 10px; }
-.filterSearch input::placeholder { color: #9a9c95; }
+.filterPanelHeader > span { color: var(--ink); font-size: 11px; }
+.filterPanelHeader button { padding: 0; border: 0; background: transparent; color: var(--ink); font-size: 11px; font-weight: 700; }
+.filterSearch { height: 50px; padding: 0 14px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.82); display: flex; align-items: center; gap: 10px; }
+.filterSearch > span { color: var(--ink); font-size: 20px; }
+.filterSearch input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 13px; font-weight: 500; }
+.filterSearch input::placeholder { color: #60635c; opacity: 1; }
 .filterDivider { height: 1px; background: var(--line); }
-.filterField { display: grid; gap: 7px; }
-.filterField > span { color: var(--muted); font-size: 9px; font-weight: 600; }
-.filterField select,.filterField input { width: 100%; height: 40px; padding: 0 30px 0 11px; border: 1px solid var(--line); border-radius: 11px; outline: 0; background: rgba(255,255,255,.72); color: var(--ink); font-size: 10px; }
-.filterField input { padding-right: 11px; }
-.filterField input::placeholder { color: #9a9c95; }
+.filterField { display: grid; gap: 9px; }
+.filterField > span { color: var(--ink); font-size: 12px; font-weight: 650; }
+.filterField select,.filterField input { width: 100%; height: 50px; padding: 0 34px 0 14px; border: 1px solid var(--line); border-radius: 13px; outline: 0; background: rgba(255,255,255,.82); color: var(--ink); font-size: 13px; font-weight: 500; }
+.filterField input { padding-right: 14px; }
+.filterField input::placeholder { color: #60635c; opacity: 1; }
 .applicationWorkspace { display: grid; gap: 12px; }
 .applicationWorkspace .marketplaceEmpty,.applicationWorkspace > .marketplaceLoading { min-height: calc(100svh - 140px); }
 .myApplicationList { display: grid; gap: 10px; }
@@ -632,6 +633,7 @@ a { color: inherit; text-decoration: none; }
   .marketplaceSidebar { position: static; order: -1; }
   .marketplaceTotal { min-height: 82px; flex-direction: row; align-items: center; }
   .marketplaceTotal strong { font-size: 30px; }
+  .marketplaceFilterPanel { min-height: auto; }
   .marketplaceGrid { grid-template-columns: 1fr; }
   .marketplaceCard { min-height: 218px; }
   .marketplaceCardTop { align-items: flex-start; }
