@@ -326,6 +326,7 @@ a { color: inherit; text-decoration: none; }
 .appBountyPanel .bountyRow { transition: background .2s; }
 .appBountyPanel .bountyRow:hover { background: rgba(255,255,255,.62); }
 .marketplace { display: block; }
+.ownedMarketplace { width: min(100%,1060px); }
 .marketplaceLayout { display: grid; grid-template-columns: minmax(0,1fr) 242px; align-items: start; gap: 18px; }
 .marketplaceResults { min-width: 0; }
 .marketplaceGrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
