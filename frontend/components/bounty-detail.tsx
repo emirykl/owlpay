@@ -8,6 +8,8 @@ import { goatTestnet } from '@/lib/network';
 import { ArrowUpRight, Check } from './icons';
 import { useAuth } from './auth-provider';
 import { useWallet } from './wallet-provider';
+import { WalletButton } from './wallet-button';
+import { IdentityButton } from './identity-button';
 
 export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty; onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -19,8 +21,17 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
     queryFn: () => owlpayApi.getBounty(initialBounty.id),
     initialData: initialBounty
   });
+  const identity = useQuery({
+    queryKey: ['identity'],
+    queryFn: owlpayApi.me,
+    enabled: configured && Boolean(user),
+    retry: false
+  });
   const bounty = detail.data;
   const canSubmit = ['OPEN', 'REVISION_REQUIRED'].includes(bounty.status);
+  const identityLinked = Boolean(address
+    && identity.data?.wallet.verified
+    && identity.data.wallet.walletAddress?.toLowerCase() === address.toLowerCase());
   const mutation = useMutation({
     mutationFn: ({ pullRequestUrl }: { pullRequestUrl: string }) => {
       if (!address) throw new Error('Connect your wallet first.');
@@ -82,7 +93,9 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
             {configured && !user ? (
               <button className="secondaryButton" onClick={signIn}>Connect GitHub</button>
             ) : !address ? (
-              <p className="inlineNotice">Connect your wallet from the navigation before submitting.</p>
+              <div className="connectionGate"><div><strong>Connect MetaMask</strong><p>Your verified wallet receives the reward if the work is approved.</p></div><WalletButton /></div>
+            ) : configured && !identityLinked ? (
+              <div className="connectionGate"><div><strong>Link GitHub and wallet</strong><p>Sign one message to prove the pull request and payout address belong to you.</p></div><IdentityButton /></div>
             ) : (
               <form className="submissionForm" onSubmit={submit}>
                 <input name="pullRequestUrl" type="url" required placeholder="https://github.com/org/repository/pull/42" aria-label="Pull request URL" />
@@ -102,4 +115,3 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
     </div>
   );
 }
-
