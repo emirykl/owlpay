@@ -281,7 +281,7 @@ a { color: inherit; text-decoration: none; }
 .appConnections .identityButton { position: static; }
 .mobileWorkspaceLabel { display: none; }
 .workspaceContent { width: min(1120px,calc(100% - 68px)); margin: 0 auto; padding-block: 52px 100px; }
-.workspaceContent.exploreWorkspace { padding-top: 28px; }
+.workspaceContent.exploreWorkspace { width: calc(100% - 68px); max-width: 1320px; padding-top: 28px; }
 .workspaceHeading { display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; margin-bottom: 38px; }
 .workspaceHeading .eyebrow { margin-bottom: 14px; }
 .workspaceHeading h1 { max-width: 790px; margin: 0; font-size: clamp(36px,4vw,48px); line-height: 1; letter-spacing: -.055em; }
@@ -345,8 +345,6 @@ a { color: inherit; text-decoration: none; }
 .marketplace { display: block; }
 .marketplaceLayout { display: grid; grid-template-columns: minmax(0,1fr) 242px; align-items: start; gap: 18px; }
 .marketplaceResults { min-width: 0; }
-.marketplaceResultCount { height: 32px; color: var(--muted); font-size: 9px; }
-.marketplaceResultCount strong { color: var(--ink); font-size: 10px; }
 .marketplaceGrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
 .marketplaceCard { min-height: 218px; padding: 17px; border: 1px solid rgba(255,255,255,.94); border-radius: 18px; background: rgba(255,255,252,.78); color: var(--ink); text-align: left; box-shadow: 0 1px 2px rgba(18,19,15,.02),0 10px 28px rgba(18,19,15,.035); backdrop-filter: blur(20px); display: flex; flex-direction: column; transition: background .2s,border-color .2s,box-shadow .2s; }
 .marketplaceCard:hover { background: rgba(255,255,255,.94); border-color: rgba(18,19,15,.09); box-shadow: 0 2px 3px rgba(18,19,15,.025),0 18px 42px rgba(18,19,15,.055); }
@@ -383,7 +381,9 @@ a { color: inherit; text-decoration: none; }
 .filterDivider { height: 1px; background: var(--line); }
 .filterField { display: grid; gap: 7px; }
 .filterField > span { color: var(--muted); font-size: 9px; font-weight: 600; }
-.filterField select { width: 100%; height: 40px; padding: 0 30px 0 11px; border: 1px solid var(--line); border-radius: 11px; outline: 0; background: rgba(255,255,255,.72); color: var(--ink); font-size: 10px; }
+.filterField select,.filterField input { width: 100%; height: 40px; padding: 0 30px 0 11px; border: 1px solid var(--line); border-radius: 11px; outline: 0; background: rgba(255,255,255,.72); color: var(--ink); font-size: 10px; }
+.filterField input { padding-right: 11px; }
+.filterField input::placeholder { color: #9a9c95; }
 .applicationWorkspace { display: grid; gap: 12px; }
 .myApplicationList { display: grid; gap: 10px; }
 .myApplicationCard { min-height: 108px; padding: 18px 20px; border: 1px solid rgba(255,255,255,.92); border-radius: 18px; background: rgba(255,255,252,.76); color: var(--ink); display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; align-items: center; gap: 16px; text-align: left; box-shadow: 0 10px 28px rgba(18,19,15,.03); }
@@ -594,7 +594,7 @@ a { color: inherit; text-decoration: none; }
   .sidebarNetwork,.backToSite { display: none; }
   .appHeader { position: static; height: 72px; padding: 0 28px; }
   .workspaceContent { width: min(100% - 56px,1180px); padding-top: 52px; }
-  .workspaceContent.exploreWorkspace { padding-top: 24px; }
+  .workspaceContent.exploreWorkspace { width: min(100% - 56px,1320px); padding-top: 24px; }
   .pathChooser { grid-template-columns: 1fr 1fr; }
   .pathIntro { min-height: auto; grid-column: 1 / -1; padding-inline: 0; }
   .marketplaceLayout { grid-template-columns: minmax(0,1fr) 226px; }
@@ -637,7 +637,7 @@ a { color: inherit; text-decoration: none; }
   .appConnections .walletButton { min-width: 112px; }
   .appConnections .identityButton { position: static; height: 40px; }
   .workspaceContent { width: min(100% - 28px,1180px); padding-block: 42px 80px; }
-  .workspaceContent.exploreWorkspace { padding-top: 18px; }
+  .workspaceContent.exploreWorkspace { width: min(100% - 28px,1320px); padding-top: 18px; }
   .workspaceHeading { align-items: flex-start; flex-direction: column; margin-bottom: 28px; }
   .workspaceHeading h1 { font-size: clamp(38px,12vw,54px); }
   .appPrimary { width: 100%; justify-content: center; }
