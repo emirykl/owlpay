@@ -16,6 +16,12 @@ interface BountyRow {
   status: BountyStatus;
   onchain_id: string | null;
   funding_tx_hash: string | null;
+  payout_tx_hash: string | null;
+  assigned_developer_user_id: string | null;
+  assigned_developer_github_login: string | null;
+  assigned_developer_address: string | null;
+  assigned_at: string | null;
+  assignment_tx_hash: string | null;
   submission: Submission | null;
   decision: AgentDecision | null;
   created_at: string;
@@ -54,11 +60,18 @@ function fromRow(row: BountyRow): Bounty {
     deadline: new Date(row.deadline).toISOString(),
     criteria: row.criteria,
     status: row.status,
-    createdAt: new Date(row.created_at).toISOString()
+    createdAt: new Date(row.created_at).toISOString(),
+    applicantCount: 0
   };
   if (row.owner_user_id) bounty.ownerUserId = row.owner_user_id;
   if (row.onchain_id) bounty.onchainId = row.onchain_id;
   if (row.funding_tx_hash) bounty.fundingTxHash = row.funding_tx_hash;
+  if (row.payout_tx_hash) bounty.payoutTxHash = row.payout_tx_hash;
+  if (row.assigned_developer_user_id) bounty.assignedDeveloperUserId = row.assigned_developer_user_id;
+  if (row.assigned_developer_github_login) bounty.assignedDeveloperGithubLogin = row.assigned_developer_github_login;
+  if (row.assigned_developer_address) bounty.assignedDeveloperAddress = row.assigned_developer_address;
+  if (row.assigned_at) bounty.assignedAt = new Date(row.assigned_at).toISOString();
+  if (row.assignment_tx_hash) bounty.assignmentTxHash = row.assignment_tx_hash;
   if (row.submission) bounty.submission = row.submission;
   if (row.decision) bounty.decision = row.decision;
   return bounty;
@@ -79,10 +92,15 @@ function toRow(bounty: Bounty) {
     status: bounty.status,
     onchain_id: bounty.onchainId ?? null,
     funding_tx_hash: bounty.fundingTxHash ?? null,
+    payout_tx_hash: bounty.payoutTxHash ?? null,
+    assigned_developer_user_id: bounty.assignedDeveloperUserId ?? null,
+    assigned_developer_github_login: bounty.assignedDeveloperGithubLogin ?? null,
+    assigned_developer_address: bounty.assignedDeveloperAddress?.toLowerCase() ?? null,
+    assigned_at: bounty.assignedAt ?? null,
+    assignment_tx_hash: bounty.assignmentTxHash ?? null,
     submission: bounty.submission ?? null,
     decision: bounty.decision ?? null,
     created_at: bounty.createdAt,
     updated_at: new Date().toISOString()
   };
 }
-

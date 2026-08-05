@@ -1,5 +1,5 @@
 export type BountyStatus =
-  | 'DRAFT' | 'OPEN' | 'SUBMITTED' | 'VERIFYING' | 'REVISION_REQUIRED'
+  | 'DRAFT' | 'OPEN' | 'ASSIGNED' | 'SUBMITTED' | 'VERIFYING' | 'READY_FOR_REVIEW' | 'REVISION_REQUIRED'
   | 'HUMAN_REVIEW' | 'APPROVED' | 'PAID' | 'EXPIRED' | 'REFUNDED' | 'CANCELLED';
 
 export interface Criterion {
@@ -11,6 +11,7 @@ export interface Criterion {
 
 export interface Bounty {
   id: string;
+  ownerUserId?: string;
   title: string;
   description: string;
   repositoryUrl: string;
@@ -21,14 +22,42 @@ export interface Bounty {
   criteria: Criterion[];
   status: BountyStatus;
   createdAt: string;
+  applicantCount: number;
+  onchainId?: string;
   fundingTxHash?: string;
-  submission?: { pullRequestUrl: string; commitSha: string; developerAddress: string; developerUserId?: string };
+  payoutTxHash?: string;
+  assignedDeveloperUserId?: string;
+  assignedDeveloperGithubLogin?: string;
+  assignedDeveloperAddress?: string;
+  assignedAt?: string;
+  assignmentTxHash?: string;
+  submission?: { pullRequestUrl: string; commitSha: string; submissionHash: string; submissionTxHash?: string; developerAddress: string; developerUserId?: string };
   decision?: {
     decision: 'APPROVE' | 'REVISION_REQUIRED' | 'HUMAN_REVIEW';
     confidence: number;
     summary: string;
     blockingIssues: string[];
   };
+}
+
+export type ApplicationStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'WITHDRAWN';
+
+export interface BountyApplication {
+  id: string;
+  bountyId: string;
+  developerUserId: string;
+  developerGithubLogin: string;
+  developerGithubAvatarUrl: string | null;
+  developerAddress: string;
+  message: string;
+  status: ApplicationStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApplicationWithBounty {
+  application: BountyApplication;
+  bounty: Bounty;
 }
 
 export interface NetworkInfo {
@@ -54,6 +83,10 @@ export interface ManageableRepository {
   ownerAvatarUrl: string | null;
   permission: 'admin' | 'maintain' | 'push';
 }
+
+export type CreateBountyPayload = Pick<Bounty,
+  'title' | 'description' | 'repositoryUrl' | 'ownerAddress' | 'rewardAmount' | 'verificationBudget' | 'deadline' | 'criteria'
+>;
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -91,16 +124,30 @@ export const owlpayApi = {
   verifyWallet: (challengeId: string, signature: string) => api<{ walletAddress: string | null; verified: boolean }>('/api/wallet/verify', {
     method: 'POST', body: JSON.stringify({ challengeId, signature })
   }),
-  createBounty: (input: Omit<Bounty, 'id' | 'status' | 'createdAt' | 'submission'>) =>
+  createBounty: (input: CreateBountyPayload) =>
     api<Bounty>('/api/bounties', { method: 'POST', body: JSON.stringify(input) }, true),
   markFunded: (id: string, onchainId: string, fundingTxHash: string) =>
     api<Bounty>(`/api/bounties/${id}/funded`, {
       method: 'POST',
       body: JSON.stringify({ onchainId, fundingTxHash })
     }),
-  submitWork: (id: string, pullRequestUrl: string, developerAddress: string) =>
+  applyToBounty: (id: string, message: string, developerAddress: string) =>
+    api<BountyApplication>(`/api/bounties/${id}/applications`, { method: 'POST', body: JSON.stringify({ message, developerAddress }) }),
+  listBountyApplications: (id: string) => api<{ items: BountyApplication[] }>(`/api/bounties/${id}/applications`),
+  listMyApplications: () => api<{ items: ApplicationWithBounty[] }>('/api/applications/me'),
+  assignApplication: (bountyId: string, applicationId: string, assignmentTxHash?: string) =>
+    api<Bounty>(`/api/bounties/${bountyId}/applications/${applicationId}/assign`, {
+      method: 'POST', body: JSON.stringify({ assignmentTxHash })
+    }),
+  prepareSubmission: (id: string, pullRequestUrl: string, developerAddress: string) =>
+    api<{ submissionHash: `0x${string}`; evidence: { author: string; headSha: string; changedFiles: number; additions: number; deletions: number } }>(`/api/bounties/${id}/submissions/prepare`, {
+      method: 'POST', body: JSON.stringify({ pullRequestUrl, developerAddress })
+    }),
+  submitWork: (id: string, pullRequestUrl: string, developerAddress: string, submissionTxHash?: string) =>
     api<{ bounty: Bounty; evidence: { author: string; headSha: string; changedFiles: number; additions: number; deletions: number } }>(`/api/bounties/${id}/submissions`, {
       method: 'POST',
-      body: JSON.stringify({ pullRequestUrl, developerAddress })
-    })
+      body: JSON.stringify({ pullRequestUrl, developerAddress, submissionTxHash })
+    }),
+  approveBounty: (id: string) => api<Bounty>(`/api/bounties/${id}/approve`, { method: 'POST' }),
+  requestBountyRevision: (id: string) => api<Bounty>(`/api/bounties/${id}/request-revision`, { method: 'POST' })
 };

@@ -14,11 +14,11 @@ import { useAuth } from './auth-provider';
 import { useWallet } from './wallet-provider';
 import { owlpayApi, type Bounty, type BountyStatus } from '@/lib/api';
 
-type WorkspaceView = 'overview' | 'explore' | 'owned' | 'submissions';
+type WorkspaceView = 'overview' | 'explore' | 'owned' | 'applications';
 type ExploreStatus = 'ALL' | 'OPEN' | 'SUBMITTED' | 'VERIFYING' | 'PAID';
 
 const statusLabels: Record<BountyStatus, string> = {
-  DRAFT: 'Draft', OPEN: 'Open', SUBMITTED: 'Submitted', VERIFYING: 'Verifying',
+  DRAFT: 'Draft', OPEN: 'Open', ASSIGNED: 'Assigned', SUBMITTED: 'Submitted', VERIFYING: 'Verifying', READY_FOR_REVIEW: 'Ready for review',
   REVISION_REQUIRED: 'Needs revision', HUMAN_REVIEW: 'Human review', APPROVED: 'Approved',
   PAID: 'Paid', EXPIRED: 'Expired', REFUNDED: 'Refunded', CANCELLED: 'Cancelled'
 };
@@ -27,7 +27,7 @@ const viewCopy: Record<WorkspaceView, { eyebrow: string; title: string; copy: st
   overview: { eyebrow: 'OwlPay workspace', title: 'Overview', copy: 'Choose an action or continue where you left off.' },
   explore: { eyebrow: 'Marketplace', title: 'Explore bounties', copy: 'Open work with clear criteria and visible rewards.' },
   owned: { eyebrow: 'Repository owner', title: 'My bounties', copy: 'Track work you created and funded.' },
-  submissions: { eyebrow: 'Developer', title: 'My submissions', copy: 'Follow your pull requests and verification results.' }
+  applications: { eyebrow: 'Developer', title: 'My applications', copy: 'Track your applications, assignments, and submitted work.' }
 };
 
 function repositoryMeta(repositoryUrl: string) {
@@ -49,7 +49,7 @@ function remainingTime(deadline: string) {
 
 export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explore' }) {
   const reduceMotion = useReducedMotion();
-  const { configured: authConfigured, githubLogin, signIn } = useAuth();
+  const { configured: authConfigured, user, githubLogin, signIn } = useAuth();
   const { address } = useWallet();
   const [view, setView] = useState<WorkspaceView>(initialIntent === 'explore' ? 'explore' : 'overview');
   const [creating, setCreating] = useState(initialIntent === 'create');
@@ -57,6 +57,7 @@ export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explo
   const [exploreQuery, setExploreQuery] = useState('');
   const [exploreStatus, setExploreStatus] = useState<ExploreStatus>('ALL');
   const bounties = useQuery({ queryKey: ['bounties'], queryFn: owlpayApi.listBounties, retry: 1 });
+  const myApplications = useQuery({ queryKey: ['my-applications', user?.id], queryFn: owlpayApi.listMyApplications, enabled: view === 'applications' && Boolean(user), retry: false });
   const network = useQuery({ queryKey: ['network'], queryFn: owlpayApi.network, refetchInterval: 30_000, retry: 1 });
   const items = useMemo(() => bounties.data?.items ?? [], [bounties.data?.items]);
 
@@ -72,12 +73,11 @@ export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explo
         .filter((item) => !query || `${item.title} ${item.description} ${item.repositoryUrl}`.toLowerCase().includes(query));
     }
     if (view === 'owned') return address ? items.filter((item) => item.ownerAddress.toLowerCase() === address.toLowerCase()) : [];
-    if (view === 'submissions') return address ? items.filter((item) => item.submission?.developerAddress.toLowerCase() === address.toLowerCase()) : [];
     return items.slice(0, 6);
   }, [address, exploreQuery, exploreStatus, items, view]);
 
   const locked = items.filter((item) => !['PAID', 'REFUNDED', 'CANCELLED'].includes(item.status)).reduce((sum, item) => sum + Number(item.rewardAmount), 0);
-  const active = items.filter((item) => ['OPEN', 'SUBMITTED', 'VERIFYING', 'REVISION_REQUIRED'].includes(item.status)).length;
+  const active = items.filter((item) => ['OPEN', 'ASSIGNED', 'SUBMITTED', 'VERIFYING', 'READY_FOR_REVIEW', 'REVISION_REQUIRED'].includes(item.status)).length;
   const copy = viewCopy[view];
 
   return (
@@ -89,7 +89,7 @@ export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explo
             ['overview', 'Overview'],
             ['explore', 'Explore'],
             ['owned', 'My bounties'],
-            ['submissions', 'My submissions']
+            ['applications', 'My applications']
           ] as const).map(([id, label]) => (
             <button key={id} className={view === id ? 'active' : ''} onClick={() => setView(id)}><span />{label}</button>
           ))}
@@ -107,7 +107,7 @@ export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explo
         <motion.section className="workspaceContent" key={view} initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}>
           <div className="workspaceHeading">
             <div><span className="eyebrow">{copy.eyebrow}</span><h1>{copy.title}</h1><p>{copy.copy}</p></div>
-            {view !== 'submissions' && <button className="primaryButton appPrimary" onClick={() => setCreating(true)}>New bounty <span>＋</span></button>}
+            {view !== 'applications' && <button className="primaryButton appPrimary" onClick={() => setCreating(true)}>New bounty <span>＋</span></button>}
           </div>
 
           {view === 'overview' && (
@@ -135,7 +135,26 @@ export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explo
             </>
           )}
 
-          {view === 'explore' ? (
+          {view === 'applications' ? (
+            <section className="applicationWorkspace">
+              {!user ? (
+                <div className="marketplaceEmpty emptyState"><h3>Connect GitHub to see your applications</h3><p>Your application history is tied to your verified GitHub identity.</p><button className="secondaryButton" onClick={signIn}>Connect GitHub</button></div>
+              ) : myApplications.isLoading ? <div className="marketplaceLoading loadingRows"><i /><i /><i /></div> : myApplications.isError ? (
+                <div className="marketplaceEmpty emptyState"><h3>Applications could not be loaded</h3><p>{myApplications.error.message}</p></div>
+              ) : myApplications.data?.items.length === 0 ? (
+                <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
+              ) : (
+                <div className="myApplicationList">{myApplications.data?.items.map(({ application, bounty }) => (
+                  <button className="myApplicationCard" key={application.id} onClick={() => setSelectedBounty(bounty)}>
+                    <span className={`applicationState state-${application.status.toLowerCase()}`}>{application.status}</span>
+                    <div><strong>{bounty.title}</strong><span>{bounty.repositoryUrl.replace('https://github.com/', '')}</span><p>{application.message}</p></div>
+                    <div className="applicationReward"><strong>{bounty.rewardAmount} USDC</strong><span>{statusLabels[bounty.status]}</span></div>
+                    <ArrowUpRight />
+                  </button>
+                ))}</div>
+              )}
+            </section>
+          ) : view === 'explore' ? (
             <section className="marketplace" aria-label="Public bounty marketplace">
               <div className="marketplaceToolbar">
                 <label className="marketplaceSearch"><span>⌕</span><input value={exploreQuery} onChange={(event) => setExploreQuery(event.target.value)} placeholder="Search bounties or repositories" aria-label="Search bounties" /></label>
@@ -151,7 +170,7 @@ export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explo
               ) : (
                 <div className="marketplaceGrid">{visibleItems.map((bounty) => {
                   const repository = repositoryMeta(bounty.repositoryUrl);
-                  const applicants = bounty.submission ? 1 : 0;
+                  const applicants = bounty.applicantCount;
                   return (
                     <motion.button className="marketplaceCard" key={bounty.id} onClick={() => setSelectedBounty(bounty)} whileHover={reduceMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.995 }}>
                       <div className="marketplaceCardTop">
@@ -200,10 +219,10 @@ export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explo
 }
 
 function EmptyView({ view, connected, onCreate, onExplore }: { view: WorkspaceView; connected: boolean; onCreate: () => void; onExplore: () => void }) {
-  if ((view === 'owned' || view === 'submissions') && !connected) {
-    return <div className="emptyState"><span className="emptyOwl"><OwlMark /></span><h3>Connect your wallet to continue</h3><p>OwlPay uses the connected address to find your {view === 'owned' ? 'funded bounties' : 'submitted work'}.</p></div>;
+  if (view === 'owned' && !connected) {
+    return <div className="emptyState"><span className="emptyOwl"><OwlMark /></span><h3>Connect your wallet to continue</h3><p>OwlPay uses the connected address to find your funded bounties.</p></div>;
   }
-  if (view === 'submissions') return <div className="emptyState"><span className="emptyOwl"><OwlMark /></span><h3>No submissions yet</h3><p>Explore an open bounty, complete the work on GitHub, then submit your pull request URL.</p><button className="secondaryButton" onClick={onExplore}>Explore bounties</button></div>;
+  if (view === 'applications') return <div className="emptyState"><span className="emptyOwl"><OwlMark /></span><h3>No applications yet</h3><p>Explore an open bounty and send the maintainer a short application message.</p><button className="secondaryButton" onClick={onExplore}>Explore bounties</button></div>;
   if (view === 'explore') return <div className="emptyState"><span className="emptyOwl"><OwlMark /></span><h3>No open bounties yet</h3><p>The marketplace is quiet right now. You can create the first funded task.</p><button className="secondaryButton" onClick={onCreate}>Create a bounty</button></div>;
   return <div className="emptyState"><span className="emptyOwl"><OwlMark /></span><h3>No bounties yet</h3><p>Create the first testnet bounty and define evidence the Owl Agent can verify.</p><button className="secondaryButton" onClick={onCreate}>Create first bounty</button></div>;
 }

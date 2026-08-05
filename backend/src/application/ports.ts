@@ -1,9 +1,25 @@
-import type { Bounty } from '../domain/schemas.js';
+import type { Bounty, BountyApplication } from '../domain/schemas.js';
 
 export interface BountyRepository {
   list(): Promise<Bounty[]>;
   get(id: string): Promise<Bounty | undefined>;
   save(bounty: Bounty): Promise<void>;
+}
+
+export interface ApplicationRepository {
+  listByBounty(bountyId: string): Promise<BountyApplication[]>;
+  listByDeveloper(developerUserId: string): Promise<BountyApplication[]>;
+  get(id: string): Promise<BountyApplication | undefined>;
+  findByBountyAndDeveloper(bountyId: string, developerUserId: string): Promise<BountyApplication | undefined>;
+  countByBounties(bountyIds: string[]): Promise<Record<string, number>>;
+  save(application: BountyApplication): Promise<void>;
+  resolveAssignment(bountyId: string, acceptedApplicationId: string): Promise<void>;
+}
+
+export interface SettlementGateway {
+  readonly writesEnabled: boolean;
+  approveAndRelease(onchainId: string, verificationHash: `0x${string}`): Promise<`0x${string}` | null>;
+  requestRevision(onchainId: string, verificationHash: `0x${string}`): Promise<`0x${string}` | null>;
 }
 
 export interface PullRequestEvidence {

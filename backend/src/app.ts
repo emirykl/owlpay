@@ -7,7 +7,10 @@ import { env } from './config/env.js';
 import { DomainError } from './domain/errors.js';
 import { GitHubClient } from './infrastructure/github-client.js';
 import { InMemoryBountyRepository } from './infrastructure/in-memory-bounty-repository.js';
+import { InMemoryApplicationRepository } from './infrastructure/in-memory-application-repository.js';
 import { SupabaseBountyRepository } from './infrastructure/supabase-bounty-repository.js';
+import { SupabaseApplicationRepository } from './infrastructure/supabase-application-repository.js';
+import { GoatSettlementGateway } from './infrastructure/goat-settlement-gateway.js';
 import { createSupabaseAdminClient, SupabaseAuthVerifier } from './infrastructure/supabase-client.js';
 import { DemoAuthVerifier } from './application/auth.js';
 import { DemoWalletIdentity } from './infrastructure/demo-wallet-identity.js';
@@ -20,12 +23,15 @@ export function buildApp() {
     ? createSupabaseAdminClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY)
     : null;
   const repository = supabase ? new SupabaseBountyRepository(supabase) : new InMemoryBountyRepository();
+  const applications = supabase ? new SupabaseApplicationRepository(supabase) : new InMemoryApplicationRepository();
   const auth = supabase ? new SupabaseAuthVerifier(supabase) : new DemoAuthVerifier();
   const walletIdentity = supabase ? new SupabaseWalletIdentity(supabase) : new DemoWalletIdentity();
   const service = new BountyService(
     repository,
+    applications,
     new GitHubClient(env.GITHUB_TOKEN),
-    new VerificationPolicy()
+    new VerificationPolicy(),
+    new GoatSettlementGateway()
   );
 
   app.register(cors, {

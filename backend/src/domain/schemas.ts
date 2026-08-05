@@ -13,8 +13,10 @@ export const criterionSchema = z.object({
 export const bountyStatusSchema = z.enum([
   'DRAFT',
   'OPEN',
+  'ASSIGNED',
   'SUBMITTED',
   'VERIFYING',
+  'READY_FOR_REVIEW',
   'REVISION_REQUIRED',
   'HUMAN_REVIEW',
   'APPROVED',
@@ -41,6 +43,14 @@ export const createBountySchema = z.object({
 
 export const submitWorkSchema = z.object({
   pullRequestUrl: z.string().url().regex(/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+\/?$/),
+  developerAddress: addressSchema,
+  submissionTxHash: bytes32Schema.optional()
+});
+
+export const applicationStatusSchema = z.enum(['PENDING', 'ACCEPTED', 'REJECTED', 'WITHDRAWN']);
+
+export const createApplicationSchema = z.object({
+  message: z.string().trim().min(20).max(600),
   developerAddress: addressSchema
 });
 
@@ -68,12 +78,29 @@ export type BountyStatus = z.infer<typeof bountyStatusSchema>;
 export type CreateBountyInput = z.infer<typeof createBountySchema>;
 export type SubmitWorkInput = z.infer<typeof submitWorkSchema>;
 export type VerificationInput = z.infer<typeof verificationInputSchema>;
+export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
+export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
+
+export interface BountyApplication {
+  id: string;
+  bountyId: string;
+  developerUserId: string;
+  developerGithubLogin: string;
+  developerGithubAvatarUrl: string | null;
+  developerAddress: string;
+  message: string;
+  status: ApplicationStatus;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface Submission {
   pullRequestUrl: string;
   developerAddress: string;
   developerUserId?: string;
   commitSha: string;
+  submissionHash: string;
+  submissionTxHash?: string;
   submittedAt: string;
 }
 
@@ -93,6 +120,13 @@ export interface Bounty extends CreateBountyInput {
   createdAt: string;
   onchainId?: string;
   fundingTxHash?: string;
+  payoutTxHash?: string;
+  assignedDeveloperUserId?: string;
+  assignedDeveloperGithubLogin?: string;
+  assignedDeveloperAddress?: string;
+  assignedAt?: string;
+  assignmentTxHash?: string;
+  applicantCount: number;
   submission?: Submission;
   decision?: AgentDecision;
 }

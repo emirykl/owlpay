@@ -2,9 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import type { BountyService } from '../application/bounty-service.js';
 import type { AuthVerifier } from '../application/auth.js';
 import type { WalletIdentity } from '../application/wallet-identity.js';
-import { addressSchema } from '../domain/schemas.js';
+import { addressSchema, bytes32Schema } from '../domain/schemas.js';
 import { env } from '../config/env.js';
-import { createBountySchema, submitWorkSchema, verificationInputSchema } from '../domain/schemas.js';
+import { createApplicationSchema, createBountySchema, submitWorkSchema, verificationInputSchema } from '../domain/schemas.js';
 import { getNetworkStatus } from '../infrastructure/goat-client.js';
 
 export async function registerRoutes(app: FastifyInstance, service: BountyService, auth: AuthVerifier, walletIdentity: WalletIdentity) {
@@ -56,6 +56,10 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     const items = await service.list();
     return { items: items.filter((bounty) => bounty.status !== 'DRAFT' || bounty.ownerUserId === actor?.id) };
   });
+  app.get('/api/applications/me', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    return { items: await service.listMyApplications(actor) };
+  });
   app.get<{ Params: { id: string } }>('/api/bounties/:id', async (request) => {
     const actor = await auth.optionalUser(request.headers.authorization);
     const bounty = await service.get(request.params.id);
@@ -84,6 +88,33 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     return service.markFunded(request.params.id, body.onchainId, body.fundingTxHash!, actor.id);
   });
 
+  app.post<{ Params: { id: string } }>('/api/bounties/:id/applications', async (request, reply) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    const input = createApplicationSchema.parse(request.body);
+    await walletIdentity.assertLinked(actor, input.developerAddress);
+    return reply.code(201).send(await service.apply(request.params.id, input, actor));
+  });
+
+  app.get<{ Params: { id: string } }>('/api/bounties/:id/applications', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    return { items: await service.listApplications(request.params.id, actor) };
+  });
+
+  app.post<{ Params: { id: string; applicationId: string } }>('/api/bounties/:id/applications/:applicationId/assign', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    const body = request.body as { assignmentTxHash?: string } | undefined;
+    const assignmentTxHash = body?.assignmentTxHash ? bytes32Schema.parse(body.assignmentTxHash) : undefined;
+    return service.assign(request.params.id, request.params.applicationId, actor, assignmentTxHash);
+  });
+
+  app.post<{ Params: { id: string } }>('/api/bounties/:id/submissions/prepare', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    const input = submitWorkSchema.parse(request.body);
+    await walletIdentity.assertLinked(actor, input.developerAddress);
+    const { evidence, submissionHash } = await service.prepareSubmission(request.params.id, input, actor);
+    return { evidence, submissionHash };
+  });
+
   app.post<{ Params: { id: string } }>('/api/bounties/:id/submissions', async (request, reply) => {
     const actor = await auth.requireUser(request.headers.authorization);
     const input = submitWorkSchema.parse(request.body);
@@ -100,6 +131,16 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     }
     const input = verificationInputSchema.parse(request.body);
     return service.verify(request.params.id, input);
+  });
+
+  app.post<{ Params: { id: string } }>('/api/bounties/:id/approve', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    return service.approve(request.params.id, actor);
+  });
+
+  app.post<{ Params: { id: string } }>('/api/bounties/:id/request-revision', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    return service.requestRevision(request.params.id, actor);
   });
 }
 

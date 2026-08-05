@@ -1,19 +1,23 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { DomainError } from '../domain/errors.js';
-import type { Bounty, CreateBountyInput, SubmitWorkInput, VerificationInput } from '../domain/schemas.js';
-import type { BountyRepository, GitHubEvidenceProvider } from './ports.js';
+import type { Bounty, BountyApplication, CreateApplicationInput, CreateBountyInput, SubmitWorkInput, VerificationInput } from '../domain/schemas.js';
+import type { ApplicationRepository, BountyRepository, GitHubEvidenceProvider, PullRequestEvidence, SettlementGateway } from './ports.js';
 import type { VerificationPolicy } from './verification-policy.js';
 import type { AuthUser } from './auth.js';
 
 export class BountyService {
   constructor(
     private readonly repository: BountyRepository,
+    private readonly applications: ApplicationRepository,
     private readonly github: GitHubEvidenceProvider,
-    private readonly policy: VerificationPolicy
+    private readonly policy: VerificationPolicy,
+    private readonly settlement: SettlementGateway = noopSettlementGateway
   ) {}
 
-  list() {
-    return this.repository.list();
+  async list() {
+    const bounties = await this.repository.list();
+    const counts = await this.applications.countByBounties(bounties.map((bounty) => bounty.id));
+    return bounties.map((bounty) => ({ ...bounty, applicantCount: counts[bounty.id] ?? 0 }));
   }
 
   listManageableRepositories(actor: AuthUser, providerToken: string) {
@@ -26,7 +30,8 @@ export class BountyService {
   async get(id: string) {
     const bounty = await this.repository.get(id);
     if (!bounty) throw new DomainError('Bounty not found', 404, 'BOUNTY_NOT_FOUND');
-    return bounty;
+    const counts = await this.applications.countByBounties([id]);
+    return { ...bounty, applicantCount: counts[id] ?? 0 };
   }
 
   async create(input: CreateBountyInput, actor: AuthUser, providerToken: string): Promise<Bounty> {
@@ -39,10 +44,68 @@ export class BountyService {
       id: randomUUID(),
       status: 'DRAFT',
       createdAt: new Date().toISOString(),
-      ownerUserId: actor.id
+      ownerUserId: actor.id,
+      applicantCount: 0
     };
     await this.repository.save(bounty);
     return bounty;
+  }
+
+  async apply(id: string, input: CreateApplicationInput, actor: AuthUser): Promise<BountyApplication> {
+    const bounty = await this.get(id);
+    if (bounty.status !== 'OPEN') throw new DomainError('This bounty is not accepting applications', 409, 'APPLICATIONS_CLOSED');
+    if (new Date(bounty.deadline).getTime() <= Date.now()) throw new DomainError('The bounty deadline has passed', 409, 'BOUNTY_EXPIRED');
+    if (!actor.identityVerified || !actor.githubLogin) throw new DomainError('A verified GitHub identity is required', 403, 'GITHUB_IDENTITY_REQUIRED');
+    if (bounty.ownerUserId === actor.id) throw new DomainError('The bounty owner cannot apply to their own bounty', 403, 'OWNER_CANNOT_APPLY');
+    const existing = await this.applications.findByBountyAndDeveloper(id, actor.id);
+    if (existing) throw new DomainError('You already applied to this bounty', 409, 'ALREADY_APPLIED');
+    const now = new Date().toISOString();
+    const application: BountyApplication = {
+      id: randomUUID(),
+      bountyId: id,
+      developerUserId: actor.id,
+      developerGithubLogin: actor.githubLogin,
+      developerGithubAvatarUrl: actor.avatarUrl,
+      developerAddress: input.developerAddress.toLowerCase(),
+      message: input.message,
+      status: 'PENDING',
+      createdAt: now,
+      updatedAt: now
+    };
+    await this.applications.save(application);
+    return application;
+  }
+
+  async listApplications(id: string, actor: AuthUser) {
+    const bounty = await this.get(id);
+    this.assertOwner(bounty, actor.id);
+    return this.applications.listByBounty(id);
+  }
+
+  async listMyApplications(actor: AuthUser) {
+    const applications = await this.applications.listByDeveloper(actor.id);
+    return Promise.all(applications.map(async (application) => ({ application, bounty: await this.get(application.bountyId) })));
+  }
+
+  async assign(id: string, applicationId: string, actor: AuthUser, assignmentTxHash?: string) {
+    const bounty = await this.get(id);
+    this.assertOwner(bounty, actor.id);
+    if (bounty.status !== 'OPEN') throw new DomainError('Only an open bounty can be assigned', 409, 'BOUNTY_NOT_OPEN');
+    const application = await this.applications.get(applicationId);
+    if (!application || application.bountyId !== id) throw new DomainError('Application not found', 404, 'APPLICATION_NOT_FOUND');
+    if (application.status !== 'PENDING') throw new DomainError('This application is no longer pending', 409, 'APPLICATION_RESOLVED');
+    const updated: Bounty = {
+      ...bounty,
+      status: 'ASSIGNED',
+      assignedDeveloperUserId: application.developerUserId,
+      assignedDeveloperGithubLogin: application.developerGithubLogin,
+      assignedDeveloperAddress: application.developerAddress,
+      assignedAt: new Date().toISOString(),
+      ...(assignmentTxHash ? { assignmentTxHash } : {})
+    };
+    await this.repository.save(updated);
+    await this.applications.resolveAssignment(id, applicationId);
+    return updated;
   }
 
   async markFunded(id: string, onchainId: string, fundingTxHash: string, actorUserId?: string) {
@@ -56,14 +119,13 @@ export class BountyService {
     return updated;
   }
 
-  async submit(id: string, input: SubmitWorkInput, actor: AuthUser) {
+  async prepareSubmission(id: string, input: SubmitWorkInput, actor: AuthUser) {
     const bounty = await this.get(id);
-    if (!['OPEN', 'REVISION_REQUIRED'].includes(bounty.status)) {
+    if (!['ASSIGNED', 'REVISION_REQUIRED'].includes(bounty.status)) {
       throw new DomainError('Bounty is not accepting submissions');
     }
-    if (actor.identityVerified && bounty.ownerUserId === actor.id) {
-      throw new DomainError('A bounty owner cannot submit work to their own bounty', 403, 'OWNER_CANNOT_SUBMIT');
-    }
+    if (bounty.assignedDeveloperUserId !== actor.id) throw new DomainError('Only the assigned developer can submit work', 403, 'DEVELOPER_NOT_ASSIGNED');
+    if (bounty.assignedDeveloperAddress?.toLowerCase() !== input.developerAddress.toLowerCase()) throw new DomainError('Use the wallet selected with your accepted application', 403, 'ASSIGNED_WALLET_MISMATCH');
     const evidence = await this.github.getPullRequest(input.pullRequestUrl);
     if (normalizeRepository(evidence.repositoryUrl) !== normalizeRepository(bounty.repositoryUrl)) {
       throw new DomainError('Pull request belongs to a different repository', 400, 'WRONG_REPOSITORY');
@@ -74,16 +136,21 @@ export class BountyService {
     if (actor.identityVerified && (!actor.githubId || actor.githubId !== evidence.authorId)) {
       throw new DomainError('The signed-in GitHub user must own the pull request', 403, 'PR_OWNER_MISMATCH');
     }
-    if (bounty.submission?.developerUserId && bounty.submission.developerUserId !== actor.id) {
-      throw new DomainError('Only the original developer can submit a revision', 403, 'DEVELOPER_MISMATCH');
-    }
+    return { bounty, evidence, submissionHash: createSubmissionHash(evidence) };
+  }
+
+  async submit(id: string, input: SubmitWorkInput, actor: AuthUser) {
+    const { bounty, evidence, submissionHash } = await this.prepareSubmission(id, input, actor);
     const updated: Bounty = {
       ...bounty,
       status: 'SUBMITTED',
       submission: {
-        ...input,
+        pullRequestUrl: input.pullRequestUrl,
+        developerAddress: input.developerAddress,
         developerUserId: actor.id,
         commitSha: evidence.headSha,
+        submissionHash,
+        ...(input.submissionTxHash ? { submissionTxHash: input.submissionTxHash } : {}),
         submittedAt: new Date().toISOString()
       }
     };
@@ -104,17 +171,74 @@ export class BountyService {
       throw new DomainError('Paid verification exceeds the bounty budget', 400, 'BUDGET_EXCEEDED');
     }
     const decision = this.policy.decide(bounty.criteria, input);
-    const status = decision.decision === 'APPROVE'
-      ? 'APPROVED'
-      : decision.decision === 'REVISION_REQUIRED'
-        ? 'REVISION_REQUIRED'
-        : 'HUMAN_REVIEW';
-    const updated: Bounty = { ...bounty, status, decision };
+    const updated: Bounty = { ...bounty, status: 'READY_FOR_REVIEW', decision };
     await this.repository.save(updated);
     return updated;
+  }
+
+  async approve(id: string, actor: AuthUser) {
+    const bounty = await this.get(id);
+    this.assertOwner(bounty, actor.id);
+    if (bounty.status !== 'READY_FOR_REVIEW') throw new DomainError('This bounty is not ready for maintainer approval', 409, 'NOT_READY_FOR_REVIEW');
+    if (!bounty.decision) throw new DomainError('The Owl Agent report is missing', 409, 'AGENT_REPORT_MISSING');
+    const payoutTxHash = await this.settlement.approveAndRelease(
+      requireOnchainId(bounty, this.settlement.writesEnabled),
+      hashDecision(bounty.decision)
+    );
+    const updated: Bounty = payoutTxHash
+      ? { ...bounty, status: 'PAID', payoutTxHash }
+      : { ...bounty, status: 'APPROVED' };
+    await this.repository.save(updated);
+    return updated;
+  }
+
+  async requestRevision(id: string, actor: AuthUser) {
+    const bounty = await this.get(id);
+    this.assertOwner(bounty, actor.id);
+    if (bounty.status !== 'READY_FOR_REVIEW') throw new DomainError('This bounty is not ready for maintainer review', 409, 'NOT_READY_FOR_REVIEW');
+    if (!bounty.decision) throw new DomainError('The Owl Agent report is missing', 409, 'AGENT_REPORT_MISSING');
+    await this.settlement.requestRevision(
+      requireOnchainId(bounty, this.settlement.writesEnabled),
+      hashDecision(bounty.decision)
+    );
+    const updated: Bounty = { ...bounty, status: 'REVISION_REQUIRED' };
+    await this.repository.save(updated);
+    return updated;
+  }
+
+  async markPaid(id: string, payoutTxHash: string) {
+    const bounty = await this.get(id);
+    if (bounty.status !== 'APPROVED') throw new DomainError('Only an approved bounty can be paid', 409, 'NOT_APPROVED');
+    const updated: Bounty = { ...bounty, status: 'PAID', payoutTxHash };
+    await this.repository.save(updated);
+    return updated;
+  }
+
+  private assertOwner(bounty: Bounty, actorUserId: string) {
+    if (!bounty.ownerUserId || bounty.ownerUserId !== actorUserId) throw new DomainError('Only the bounty owner can perform this action', 403, 'FORBIDDEN');
   }
 }
 
 function normalizeRepository(value: string) {
   return value.replace(/\/$/, '').toLowerCase();
 }
+
+function createSubmissionHash(evidence: PullRequestEvidence): `0x${string}` {
+  return `0x${createHash('sha256').update(`${evidence.pullRequestUrl}:${evidence.headSha}`).digest('hex')}`;
+}
+
+function hashDecision(decision: NonNullable<Bounty['decision']>): `0x${string}` {
+  return `0x${createHash('sha256').update(JSON.stringify(decision)).digest('hex')}`;
+}
+
+function requireOnchainId(bounty: Bounty, required: boolean) {
+  if (bounty.onchainId && /^\d+$/.test(bounty.onchainId)) return bounty.onchainId;
+  if (required) throw new DomainError('This bounty is not linked to a valid on-chain escrow', 409, 'ONCHAIN_BOUNTY_REQUIRED');
+  return '';
+}
+
+const noopSettlementGateway: SettlementGateway = {
+  writesEnabled: false,
+  async approveAndRelease() { return null; },
+  async requestRevision() { return null; }
+};
