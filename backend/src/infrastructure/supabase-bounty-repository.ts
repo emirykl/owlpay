@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BountyRepository } from '../application/ports.js';
-import type { AgentDecision, Bounty, BountyStatus, Criterion, Submission } from '../domain/schemas.js';
+import type { AgentDecision, Bounty, BountyStatus, Criterion, ReviewPaymentStatus, ReviewPlan, Submission } from '../domain/schemas.js';
 
 interface BountyRow {
   id: string;
@@ -11,6 +11,12 @@ interface BountyRow {
   repository_url: string;
   reward_amount: string | number;
   verification_budget: string | number;
+  review_plan: ReviewPlan;
+  review_price: string | number;
+  review_payment_status: ReviewPaymentStatus;
+  review_payment_tx_hash: string | null;
+  review_paid_at: string | null;
+  review_consumed_at: string | null;
   deadline: string;
   criteria: Criterion[];
   status: BountyStatus;
@@ -56,7 +62,9 @@ function fromRow(row: BountyRow): Bounty {
     description: row.description,
     repositoryUrl: row.repository_url,
     rewardAmount: String(row.reward_amount),
-    verificationBudget: String(row.verification_budget),
+    reviewPlan: row.review_plan ?? 'STANDARD',
+    reviewPrice: String(row.review_price ?? 2),
+    reviewPaymentStatus: row.review_payment_status ?? 'REQUIRED',
     deadline: new Date(row.deadline).toISOString(),
     criteria: row.criteria,
     status: row.status,
@@ -74,6 +82,9 @@ function fromRow(row: BountyRow): Bounty {
   if (row.assignment_tx_hash) bounty.assignmentTxHash = row.assignment_tx_hash;
   if (row.submission) bounty.submission = row.submission;
   if (row.decision) bounty.decision = row.decision;
+  if (row.review_payment_tx_hash) bounty.reviewPaymentTxHash = row.review_payment_tx_hash;
+  if (row.review_paid_at) bounty.reviewPaidAt = new Date(row.review_paid_at).toISOString();
+  if (row.review_consumed_at) bounty.reviewConsumedAt = new Date(row.review_consumed_at).toISOString();
   return bounty;
 }
 
@@ -86,7 +97,13 @@ function toRow(bounty: Bounty) {
     description: bounty.description,
     repository_url: bounty.repositoryUrl,
     reward_amount: bounty.rewardAmount,
-    verification_budget: bounty.verificationBudget,
+    verification_budget: 0,
+    review_plan: bounty.reviewPlan,
+    review_price: bounty.reviewPrice,
+    review_payment_status: bounty.reviewPaymentStatus,
+    review_payment_tx_hash: bounty.reviewPaymentTxHash ?? null,
+    review_paid_at: bounty.reviewPaidAt ?? null,
+    review_consumed_at: bounty.reviewConsumedAt ?? null,
     deadline: bounty.deadline,
     criteria: bounty.criteria,
     status: bounty.status,

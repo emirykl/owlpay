@@ -11,6 +11,7 @@ import { InMemoryApplicationRepository } from './infrastructure/in-memory-applic
 import { SupabaseBountyRepository } from './infrastructure/supabase-bounty-repository.js';
 import { SupabaseApplicationRepository } from './infrastructure/supabase-application-repository.js';
 import { GoatSettlementGateway } from './infrastructure/goat-settlement-gateway.js';
+import { GoatReviewPaymentVerifier } from './infrastructure/goat-review-payment-verifier.js';
 import { createSupabaseAdminClient, SupabaseAuthVerifier } from './infrastructure/supabase-client.js';
 import { DemoAuthVerifier } from './application/auth.js';
 import { DemoWalletIdentity } from './infrastructure/demo-wallet-identity.js';
@@ -31,13 +32,21 @@ export function buildApp() {
     applications,
     new GitHubClient(env.GITHUB_TOKEN),
     new VerificationPolicy(),
-    new GoatSettlementGateway()
+    new GoatSettlementGateway(),
+    new GoatReviewPaymentVerifier(),
+    {
+      paymentToken: env.PAYMENT_TOKEN_ADDRESS as `0x${string}` | '',
+      treasury: env.PLATFORM_TREASURY_ADDRESS as `0x${string}` | '',
+      standardPrice: env.STANDARD_REVIEW_PRICE,
+      securityPrice: env.SECURITY_REVIEW_PRICE
+    }
   );
 
   app.register(cors, {
     origin: env.FRONTEND_ORIGIN,
     methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Agent-Key', 'X-GitHub-Token']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Agent-Key', 'X-GitHub-Token'],
+    exposedHeaders: ['PAYMENT-REQUIRED']
   });
   app.register(async (routesApp) => registerRoutes(routesApp, service, auth, walletIdentity));
 

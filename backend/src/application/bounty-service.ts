@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { parseUnits } from 'viem';
 import { DomainError } from '../domain/errors.js';
 import type { Bounty, BountyApplication, CreateApplicationInput, CreateBountyInput, SubmitWorkInput, VerificationInput } from '../domain/schemas.js';
-import type { ApplicationRepository, BountyRepository, GitHubEvidenceProvider, PullRequestEvidence, SettlementGateway } from './ports.js';
+import type { ApplicationRepository, BountyRepository, GitHubEvidenceProvider, PullRequestEvidence, ReviewPaymentVerifier, SettlementGateway } from './ports.js';
 import type { VerificationPolicy } from './verification-policy.js';
 import type { AuthUser } from './auth.js';
 
@@ -11,7 +12,9 @@ export class BountyService {
     private readonly applications: ApplicationRepository,
     private readonly github: GitHubEvidenceProvider,
     private readonly policy: VerificationPolicy,
-    private readonly settlement: SettlementGateway = noopSettlementGateway
+    private readonly settlement: SettlementGateway = noopSettlementGateway,
+    private readonly reviewPayments: ReviewPaymentVerifier = unavailableReviewPaymentVerifier,
+    private readonly reviewConfig: ReviewConfig = defaultReviewConfig
   ) {}
 
   async list() {
@@ -45,10 +48,70 @@ export class BountyService {
       status: 'DRAFT',
       createdAt: new Date().toISOString(),
       ownerUserId: actor.id,
-      applicantCount: 0
+      applicantCount: 0,
+      reviewPrice: input.reviewPlan === 'SECURITY' ? this.reviewConfig.securityPrice : this.reviewConfig.standardPrice,
+      reviewPaymentStatus: 'REQUIRED'
     };
     await this.repository.save(bounty);
     return bounty;
+  }
+
+  async getReviewPaymentRequirement(id: string, actor: AuthUser) {
+    const bounty = await this.get(id);
+    this.assertOwner(bounty, actor.id);
+    if (!this.reviewConfig.paymentToken || !this.reviewConfig.treasury) {
+      throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED');
+    }
+    if (bounty.reviewPaymentStatus !== 'REQUIRED') {
+      throw new DomainError('The review package is already paid', 409, 'REVIEW_ALREADY_PAID');
+    }
+    return {
+      x402Version: 2,
+      orderId: bounty.id,
+      resource: {
+        url: `/api/bounties/${bounty.id}/review-payment`,
+        description: `${bounty.reviewPlan === 'SECURITY' ? 'Security' : 'Standard'} Owl Agent review for ${bounty.title}`,
+        mimeType: 'application/json'
+      },
+      accepts: [{
+        scheme: 'exact',
+        network: 'eip155:48816',
+        amount: parseUnits(bounty.reviewPrice, 6).toString(),
+        asset: this.reviewConfig.paymentToken,
+        payTo: this.reviewConfig.treasury,
+        maxTimeoutSeconds: 900,
+        extra: { name: 'OwlPay Test USDC', version: '1', decimals: 6 }
+      }]
+    };
+  }
+
+  async confirmReviewPayment(id: string, txHash: `0x${string}`, actor: AuthUser) {
+    const bounty = await this.get(id);
+    this.assertOwner(bounty, actor.id);
+    if (bounty.reviewPaymentStatus !== 'REQUIRED') {
+      if (bounty.reviewPaymentTxHash?.toLowerCase() === txHash.toLowerCase()) return bounty;
+      throw new DomainError('The review package is already paid', 409, 'REVIEW_ALREADY_PAID');
+    }
+    if (actor.id !== bounty.ownerUserId || !this.reviewConfig.paymentToken || !this.reviewConfig.treasury) {
+      throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED');
+    }
+    const reused = (await this.repository.list()).some((item) => item.reviewPaymentTxHash?.toLowerCase() === txHash.toLowerCase());
+    if (reused) throw new DomainError('This transaction has already purchased a review', 409, 'PAYMENT_ALREADY_USED');
+    await this.reviewPayments.verify({
+      txHash,
+      payer: bounty.ownerAddress as `0x${string}`,
+      token: this.reviewConfig.paymentToken,
+      payTo: this.reviewConfig.treasury,
+      amount: parseUnits(bounty.reviewPrice, 6)
+    });
+    const updated: Bounty = {
+      ...bounty,
+      reviewPaymentStatus: 'PAID',
+      reviewPaymentTxHash: txHash,
+      reviewPaidAt: new Date().toISOString()
+    };
+    await this.repository.save(updated);
+    return updated;
   }
 
   async apply(id: string, input: CreateApplicationInput, actor: AuthUser): Promise<BountyApplication> {
@@ -164,16 +227,33 @@ export class BountyService {
     if (bounty.status !== 'SUBMITTED' || !bounty.submission) {
       throw new DomainError('Bounty has no submission ready for verification');
     }
-    if (input.paidVerification && input.paidVerification.commitSha !== bounty.submission.commitSha) {
-      throw new DomainError('Paid report is bound to a different commit', 400, 'COMMIT_MISMATCH');
-    }
-    if (input.paidVerification && Number(input.paidVerification.price) > Number(bounty.verificationBudget)) {
-      throw new DomainError('Paid verification exceeds the bounty budget', 400, 'BUDGET_EXCEEDED');
-    }
+    if (input.commitSha && input.commitSha !== bounty.submission.commitSha) throw new DomainError('Agent report is bound to a different commit', 400, 'COMMIT_MISMATCH');
+    if (bounty.reviewPaymentStatus !== 'PAID') throw new DomainError('The maintainer must purchase the review package first', 402, 'REVIEW_PAYMENT_REQUIRED');
     const decision = this.policy.decide(bounty.criteria, input);
-    const updated: Bounty = { ...bounty, status: 'READY_FOR_REVIEW', decision };
+    const updated: Bounty = {
+      ...bounty,
+      status: 'READY_FOR_REVIEW',
+      reviewPaymentStatus: 'CONSUMED',
+      reviewConsumedAt: new Date().toISOString(),
+      decision
+    };
     await this.repository.save(updated);
     return updated;
+  }
+
+  async runAutomatedReview(id: string, actor: AuthUser) {
+    const bounty = await this.get(id);
+    this.assertOwner(bounty, actor.id);
+    return this.runPaidReview(id);
+  }
+
+  async runPaidReview(id: string) {
+    const bounty = await this.get(id);
+    if (bounty.status !== 'SUBMITTED' || !bounty.submission) {
+      throw new DomainError('Bounty has no submission ready for review', 409, 'SUBMISSION_REQUIRED');
+    }
+    const input = await this.github.reviewPullRequest(bounty.submission.pullRequestUrl, bounty.criteria);
+    return this.verify(id, input);
   }
 
   async approve(id: string, actor: AuthUser) {
@@ -241,4 +321,17 @@ const noopSettlementGateway: SettlementGateway = {
   writesEnabled: false,
   async approveAndRelease() { return null; },
   async requestRevision() { return null; }
+};
+
+export interface ReviewConfig {
+  paymentToken: `0x${string}` | '';
+  treasury: `0x${string}` | '';
+  standardPrice: string;
+  securityPrice: string;
+}
+
+const defaultReviewConfig: ReviewConfig = { paymentToken: '', treasury: '', standardPrice: '2', securityPrice: '5' };
+
+const unavailableReviewPaymentVerifier: ReviewPaymentVerifier = {
+  async verify() { throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED'); }
 };

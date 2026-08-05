@@ -6,14 +6,14 @@
 - `application`: use cases, ports and deterministic settlement policy
 - `infrastructure`: GitHub, GOAT Testnet3 and persistence adapters
 - `http`: Fastify transport
-- `contracts`: escrow and audit-cap contract
+- `contracts`: single-token escrow, testnet token faucet and fee settlement
 
 The in-memory repository is retained for isolated local tests. Shared and production deployments use Supabase Postgres through the same repository port.
 
 ## Supabase setup
 
 1. Create a Supabase project.
-2. Run the files under `supabase/migrations` in numeric order in the SQL editor. Existing projects must also run new numbered migrations, including `0003_bounty_applications.sql` for applications and assignments.
+2. Run the files under `supabase/migrations` in numeric order in the SQL editor. Existing projects must run `0004_review_payments.sql` after the earlier migrations.
 3. Enable GitHub under Authentication → Providers and copy the Supabase callback URL into the GitHub OAuth App.
 4. Set `PERSISTENCE_MODE=supabase`, `SUPABASE_URL` and the backend-only `SUPABASE_SECRET_KEY`.
 5. Generate a random `AGENT_API_KEY` with at least 24 characters.
@@ -27,9 +27,12 @@ GitHub OAuth is also the authorization boundary for repository owners. OwlPay re
 1. A maintainer funds an open bounty.
 2. Developers apply with a private note and their verified payout wallet.
 3. The maintainer selects one application; the selected wallet is assigned on-chain.
-4. Only that developer can submit a pull request. GitHub evidence is checked before its hash is signed into the contract.
-5. The Owl Agent produces a report bound to the submitted commit.
-6. The maintainer requests a revision or approves the report. With testnet writes enabled, approval records the report hash and releases the escrowed reward.
+4. The maintainer purchases one Standard or Security review package. This is a separate pay-per-use payment and never reduces the developer reward.
+5. Only the assigned developer can submit a pull request. GitHub identity, repository, PR author and commit are verified before the submission hash is written on-chain.
+6. If the review is already paid, the Owl Agent starts automatically after submission. It reads GitHub checks and diff patches, rejects failed checks and obvious secret/TLS/code-execution risks, and escalates uncertain evidence to a human.
+7. The maintainer requests a revision or approves the report. Approval records the report hash and releases 97% to the developer and 3% to the immutable treasury.
+
+The MVP deliberately does not execute untrusted repository code on the API server. It consumes GitHub CI results and performs a bounded patch scan. A production release should add an isolated, ephemeral CI worker and an independent smart-contract audit.
 
 ## Commands
 
@@ -44,11 +47,15 @@ npm run contract:test
 
 ## Testnet deployment
 
-1. Obtain Testnet3 gas from `https://bridge.testnet3.goat.network/faucet`.
-2. Copy `.env.example` to `.env`.
-3. Set `DEPLOYER_PRIVATE_KEY` only in the local `.env` or deployment secret store.
-4. Run `npm run contract:deploy:testnet`.
-5. Put the resulting contract address in both backend and frontend environment files.
-6. Keep `ENABLE_TESTNET_WRITES=false` until the deployed bytecode and roles are manually checked.
+1. Create a dedicated MetaMask account on chain `48816` and obtain native test BTC gas from `https://bridge.testnet3.goat.network/faucet`.
+2. Copy `.env.example` to `.env`; set `DEPLOYER_PRIVATE_KEY`, `SETTLEMENT_AGENT_ADDRESS`, and `PLATFORM_TREASURY_ADDRESS` only in local/deployment secrets.
+3. Leave `PAYMENT_TOKEN_ADDRESS` empty to deploy `OwlPayTestUSDC` automatically. It has 6 decimals, a once-per-day public test faucet, and no real-world value. If a reviewed supported token is later selected, set its address instead.
+4. Run `npm run contract:deploy:testnet` and save both output addresses.
+5. Set `OWL_PAY_CONTRACT_ADDRESS`, `PAYMENT_TOKEN_ADDRESS`, and `PLATFORM_TREASURY_ADDRESS` in the backend. Set the two public contract addresses in the frontend.
+6. Run the contract tests, verify constructor values and roles on the explorer, then set `ENABLE_TESTNET_WRITES=true`.
 
-The verification budget is a strict audit cap. The testnet settlement wallet pays GOAT Flow/x402; the contract records the payment reference but cannot make arbitrary verifier transfers.
+Official GOAT Testnet3 deployments currently include tUSDC at `0xFCA5846c86dC8Df1B1e21447649A08a18B667B92` and tUSDT at `0x030B2C744Fa080D97c0033214dEF6384f763aB21`, both with 18 decimals. OwlPay defaults to its own 6-decimal test token because the public project documentation does not provide an ordinary-user faucet for those owner-minted assets.
+
+## Review payment / x402 boundary
+
+`POST /api/bounties/:id/review-payment` returns HTTP 402 plus a `PAYMENT-REQUIRED` header containing a version-2 exact-payment requirement for GOAT Testnet3. The owner transfers the exact token amount to the configured treasury and confirms the transaction. The backend verifies chain receipt, token, sender, receiver, exact amount, and replay protection before issuing one review credit. Hosted GOAT Flow credentials can replace this adapter later without changing the bounty domain model.

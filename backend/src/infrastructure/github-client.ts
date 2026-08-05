@@ -1,4 +1,5 @@
 import { DomainError } from '../domain/errors.js';
+import type { Criterion, VerificationInput } from '../domain/schemas.js';
 import type { GitHubEvidenceProvider, ManageableRepository, PullRequestEvidence } from '../application/ports.js';
 
 const pullRequestPattern = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)\/?$/;
@@ -56,6 +57,74 @@ export class GitHubClient implements GitHubEvidenceProvider {
     };
   }
 
+  async reviewPullRequest(url: string, criteria: Criterion[]): Promise<VerificationInput> {
+    const pullRequest = await this.getPullRequest(url);
+    const match = pullRequestPattern.exec(url);
+    if (!match?.[1] || !match[2] || !match[3]) throw new DomainError('Invalid GitHub pull request URL');
+    const [, owner, repository, number] = match;
+    const headers = {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'OwlPay-MVP',
+      ...(this.token ? { Authorization: `Bearer ${this.token}` } : {})
+    };
+    const [filesResponse, checksResponse] = await Promise.all([
+      fetch(`https://api.github.com/repos/${owner}/${repository}/pulls/${number}/files?per_page=100`, {
+        headers, signal: AbortSignal.timeout(10_000)
+      }),
+      fetch(`https://api.github.com/repos/${owner}/${repository}/commits/${pullRequest.headSha}/check-runs?per_page=100`, {
+        headers, signal: AbortSignal.timeout(10_000)
+      })
+    ]);
+    if (!filesResponse.ok) throw githubError(filesResponse.status, 'Pull request files could not be loaded');
+    const files = await filesResponse.json() as Array<{ filename: string; status: string; patch?: string }>;
+    const checks = checksResponse.ok
+      ? (await checksResponse.json() as { check_runs: Array<{ name: string; status: string; conclusion: string | null; html_url?: string }> }).check_runs
+      : [];
+    const failedChecks = checks.filter((check) => check.status === 'completed' && !['success', 'neutral', 'skipped'].includes(check.conclusion ?? ''));
+    const successfulChecks = checks.filter((check) => check.status === 'completed' && check.conclusion === 'success');
+    const riskFindings = scanPatches(files);
+    const evidenceBase = [`commit:${pullRequest.headSha}`, `files:${files.length}`];
+
+    const criterionResults = criteria.map((criterion) => {
+      if (criterion.method === 'manual') {
+        return { criterionId: criterion.id, status: 'UNKNOWN' as const, evidence: evidenceBase, summary: 'This criterion requires maintainer review.' };
+      }
+      if (criterion.method === 'ci') {
+        if (failedChecks.length) return {
+          criterionId: criterion.id,
+          status: 'FAILED' as const,
+          evidence: failedChecks.slice(0, 10).map((check) => `check:${check.name}:${check.conclusion}`),
+          summary: `${failedChecks.length} GitHub check(s) did not pass.`
+        };
+        if (!successfulChecks.length) return {
+          criterionId: criterion.id,
+          status: 'UNKNOWN' as const,
+          evidence: evidenceBase,
+          summary: 'No successful GitHub check run was available for this commit.'
+        };
+        return {
+          criterionId: criterion.id,
+          status: 'PASSED' as const,
+          evidence: successfulChecks.slice(0, 10).map((check) => `check:${check.name}:success`),
+          summary: `${successfulChecks.length} GitHub check(s) passed.`
+        };
+      }
+      return {
+        criterionId: criterion.id,
+        status: riskFindings.length ? 'UNKNOWN' as const : 'PASSED' as const,
+        evidence: evidenceBase,
+        summary: riskFindings.length ? 'The diff needs maintainer attention due to static-analysis findings.' : 'The pull request contains reviewable changes and no blocking static pattern was found.'
+      };
+    });
+
+    return {
+      commitSha: pullRequest.headSha,
+      confidence: failedChecks.length || riskFindings.length ? 0.96 : successfulChecks.length ? 0.94 : 0.72,
+      criterionResults,
+      blockingIssues: [...failedChecks.map((check) => `GitHub check failed: ${check.name}`), ...riskFindings]
+    };
+  }
+
   async listManageableRepositories(providerToken: string, expectedUserId: number): Promise<ManageableRepository[]> {
     await this.assertTokenOwner(providerToken, expectedUserId);
     const response = await this.request(
@@ -105,6 +174,19 @@ export class GitHubClient implements GitHubEvidenceProvider {
       signal: AbortSignal.timeout(10_000)
     });
   }
+}
+
+function scanPatches(files: Array<{ filename: string; patch?: string }>) {
+  const findings = new Set<string>();
+  for (const file of files) {
+    const additions = (file.patch ?? '').split('\n').filter((line) => line.startsWith('+') && !line.startsWith('+++')).join('\n');
+    if (/BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|(?:api[_-]?key|secret|password)\s*[:=]\s*["'][^"']{12,}/i.test(additions)) {
+      findings.add(`Possible secret committed in ${file.filename}`);
+    }
+    if (/\beval\s*\(|child_process\.(?:exec|spawn)\s*\(/.test(additions)) findings.add(`Risky code execution pattern in ${file.filename}`);
+    if (/rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*["']?0/.test(additions)) findings.add(`TLS verification disabled in ${file.filename}`);
+  }
+  return [...findings];
 }
 
 function getWritePermission(permissions?: GitHubRepositoryPayload['permissions']): ManageableRepository['permission'] | null {

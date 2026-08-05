@@ -1,14 +1,18 @@
 import { parseAbi } from 'viem';
 
 export const owlPayAbi = parseAbi([
-  'function createBounty(address paymentToken, uint128 rewardAmount, uint128 verificationBudget, uint64 deadline, bytes32 taskHash) returns (uint256 bountyId)',
+  'function createBounty(uint128 rewardAmount, uint64 deadline, bytes32 taskHash) returns (uint256 bountyId)',
   'function assignDeveloper(uint256 bountyId, address developer)',
   'function submitWork(uint256 bountyId, bytes32 submissionHash)',
-  'event BountyCreated(uint256 indexed bountyId, address indexed owner, address indexed paymentToken, uint256 rewardAmount, uint256 verificationBudget, uint256 deadline, bytes32 taskHash)'
+  'event BountyCreated(uint256 indexed bountyId, address indexed owner, address indexed paymentToken, uint256 rewardAmount, uint256 deadline, bytes32 taskHash)'
 ]);
 
 export const erc20Abi = parseAbi([
-  'function approve(address spender, uint256 amount) returns (bool)'
+  'function approve(address spender, uint256 amount) returns (bool)',
+  'function transfer(address recipient, uint256 amount) returns (bool)',
+  'function claim()',
+  'function balanceOf(address account) view returns (uint256)',
+  'function decimals() view returns (uint8)'
 ]);
 
 export const contractAddress = process.env.NEXT_PUBLIC_OWLPAY_CONTRACT_ADDRESS as `0x${string}` | undefined;
