@@ -282,11 +282,7 @@ a { color: inherit; text-decoration: none; }
 .mobileWorkspaceLabel { display: none; }
 .workspaceContent { width: min(1120px,calc(100% - 68px)); margin: 0 auto; padding-block: 52px 100px; }
 .workspaceContent.exploreWorkspace { width: calc(100% - 68px); max-width: 1320px; padding-top: 28px; }
-.workspaceContent.ownedWorkspace { padding-bottom: 28px; }
-.workspaceHeading { display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; margin-bottom: 38px; }
-.workspaceHeading .eyebrow { margin-bottom: 14px; }
-.workspaceHeading h1 { max-width: 790px; margin: 0; font-size: clamp(36px,4vw,48px); line-height: 1; letter-spacing: -.055em; }
-.workspaceHeading p { max-width: 620px; margin: 18px 0 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.workspaceContent.ownedWorkspace,.workspaceContent.applicationsWorkspace { padding-bottom: 28px; }
 .appPrimary { height: 46px; flex: 0 0 auto; padding: 0 17px; display: inline-flex; align-items: center; gap: 10px; }
 .appPrimary span { font-size: 18px; font-weight: 400; }
 .pathChooser { display: grid; grid-template-columns: .78fr 1fr 1fr; gap: 12px; }
@@ -371,6 +367,7 @@ a { color: inherit; text-decoration: none; }
 .filterField input { padding-right: 11px; }
 .filterField input::placeholder { color: #9a9c95; }
 .applicationWorkspace { display: grid; gap: 12px; }
+.applicationWorkspace .marketplaceEmpty,.applicationWorkspace > .marketplaceLoading { min-height: calc(100svh - 140px); }
 .myApplicationList { display: grid; gap: 10px; }
 .myApplicationCard { min-height: 108px; padding: 18px 20px; border: 1px solid rgba(255,255,255,.92); border-radius: 18px; background: rgba(255,255,252,.76); color: var(--ink); display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; align-items: center; gap: 16px; text-align: left; box-shadow: 0 10px 28px rgba(18,19,15,.03); }
 .myApplicationCard > div:nth-child(2) { display: grid; gap: 4px; }
@@ -581,8 +578,9 @@ a { color: inherit; text-decoration: none; }
   .appHeader { position: static; height: 72px; padding: 0 28px; }
   .workspaceContent { width: min(100% - 56px,1180px); padding-top: 52px; }
   .workspaceContent.exploreWorkspace { width: min(100% - 56px,1320px); padding-top: 24px; }
-  .workspaceContent.ownedWorkspace { padding-bottom: 24px; }
+  .workspaceContent.ownedWorkspace,.workspaceContent.applicationsWorkspace { padding-bottom: 24px; }
   .ownedMarketplace .marketplaceEmpty { min-height: calc(100svh - 192px); }
+  .applicationWorkspace .marketplaceEmpty,.applicationWorkspace > .marketplaceLoading { min-height: calc(100svh - 192px); }
   .pathChooser { grid-template-columns: 1fr 1fr; }
   .pathIntro { min-height: auto; grid-column: 1 / -1; padding-inline: 0; }
   .marketplaceLayout { grid-template-columns: minmax(0,1fr) 226px; }
@@ -626,10 +624,9 @@ a { color: inherit; text-decoration: none; }
   .appConnections .identityButton { position: static; height: 40px; }
   .workspaceContent { width: min(100% - 28px,1180px); padding-block: 42px 80px; }
   .workspaceContent.exploreWorkspace { width: min(100% - 28px,1320px); padding-top: 18px; }
-  .workspaceContent.ownedWorkspace { padding-bottom: 18px; }
+  .workspaceContent.ownedWorkspace,.workspaceContent.applicationsWorkspace { padding-bottom: 18px; }
   .ownedMarketplace .marketplaceEmpty { min-height: calc(100svh - 220px); }
-  .workspaceHeading { align-items: flex-start; flex-direction: column; margin-bottom: 28px; }
-  .workspaceHeading h1 { font-size: clamp(38px,12vw,54px); }
+  .applicationWorkspace .marketplaceEmpty,.applicationWorkspace > .marketplaceLoading { min-height: calc(100svh - 220px); }
   .appPrimary { width: 100%; justify-content: center; }
   .marketplaceLayout { grid-template-columns: 1fr; }
   .marketplaceSidebar { position: static; order: -1; }

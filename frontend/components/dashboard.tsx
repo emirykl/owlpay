@@ -26,10 +26,10 @@ const statusLabels: Record<BountyStatus, string> = {
   PAID: 'Paid', EXPIRED: 'Expired', REFUNDED: 'Refunded', CANCELLED: 'Cancelled'
 };
 
-const viewCopy: Record<WorkspaceView, { eyebrow: string; title: string; copy: string }> = {
-  explore: { eyebrow: 'Marketplace', title: 'Explore bounties', copy: 'Open work with clear criteria and visible rewards.' },
-  owned: { eyebrow: 'Repository owner', title: 'My bounties', copy: 'Track work you created and funded.' },
-  applications: { eyebrow: 'Developer', title: 'My applications', copy: 'Track your applications, assignments, and submitted work.' }
+const viewTitles: Record<WorkspaceView, string> = {
+  explore: 'Explore bounties',
+  owned: 'My bounties',
+  applications: 'My applications'
 };
 
 function repositoryMeta(repositoryUrl: string) {
@@ -103,7 +103,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
     return [];
   }, [address, exploreQuery, exploreRepository, exploreSort, exploreStatus, items, publicItems, userId, view]);
 
-  const copy = viewCopy[view];
+  const title = viewTitles[view];
 
   return (
     <main className="workspaceShell">
@@ -124,18 +124,14 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
 
       <div className="workspaceBody">
         <header className="appHeader">
-          <div className="appHeaderTitle"><strong>{copy.title}</strong></div>
+          <div className="appHeaderTitle"><strong>{title}</strong></div>
           <div className="appHeaderActions">
             {view !== 'applications' && <button className="headerNewBounty" onClick={() => setCreating(true)}>New bounty <span>＋</span></button>}
             <div className="appConnections"><AuthButton /><WalletButton /><IdentityButton /></div>
           </div>
         </header>
 
-        <motion.section className={`workspaceContent ${view !== 'applications' ? 'exploreWorkspace' : ''} ${view === 'owned' ? 'ownedWorkspace' : ''}`} key={view} initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}>
-          {view === 'applications' && <div className="workspaceHeading">
-            <div><span className="eyebrow">{copy.eyebrow}</span><h1>{copy.title}</h1><p>{copy.copy}</p></div>
-          </div>}
-
+        <motion.section className={`workspaceContent exploreWorkspace ${view === 'owned' ? 'ownedWorkspace' : ''} ${view === 'applications' ? 'applicationsWorkspace' : ''}`} key={view} initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}>
           {view === 'applications' ? (
             <section className="applicationWorkspace">
               {!user ? (
