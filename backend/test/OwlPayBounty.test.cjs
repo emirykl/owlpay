@@ -16,6 +16,7 @@ describe('OwlPayBounty', function () {
     const deadline = Math.floor(Date.now() / 1000) + 3600;
     const taskHash = ethers.id('health-endpoint');
     await contract.connect(owner).createBounty(await token.getAddress(), 20_000_000n, 500_000n, deadline, taskHash);
+    await contract.connect(owner).assignDeveloper(1, developer.address);
     await contract.connect(developer).submitWork(1, ethers.id('repo:commit-a'));
     await contract.connect(settlement).approveSubmission(1, ethers.id('verification-a'));
     await expect(contract.connect(settlement).releasePayment(1))
@@ -27,10 +28,12 @@ describe('OwlPayBounty', function () {
     const { settlement, owner, developer, outsider, token, contract } = await deployFixture();
     const deadline = Math.floor(Date.now() / 1000) + 3600;
     await contract.connect(owner).createBounty(await token.getAddress(), 20_000_000n, 500_000n, deadline, ethers.id('task'));
+    await expect(contract.connect(outsider).assignDeveloper(1, developer.address)).to.be.revertedWithCustomError(contract, 'NotBountyOwner');
+    await contract.connect(owner).assignDeveloper(1, developer.address);
+    await expect(contract.connect(outsider).submitWork(1, ethers.id('outsider-submission'))).to.be.revertedWithCustomError(contract, 'InvalidAddress');
     await contract.connect(developer).submitWork(1, ethers.id('submission'));
     await expect(contract.connect(outsider).approveSubmission(1, ethers.id('report'))).to.be.reverted;
     await expect(contract.connect(settlement).recordVerificationSpend(1, 500_001n, ethers.id('payment')))
       .to.be.revertedWithCustomError(contract, 'VerificationBudgetExceeded');
   });
 });
-

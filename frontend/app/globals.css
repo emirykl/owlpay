@@ -359,6 +359,43 @@ a { color: inherit; text-decoration: none; }
 .marketplaceCardFooter .metaIcon { width: 15px; height: 15px; display: grid; place-items: center; }
 .marketplaceCardFooter .metaIcon svg { width: 15px; }
 .marketplaceEmpty,.marketplaceLoading { min-height: 320px; border: 1px solid rgba(255,255,255,.9); border-radius: 20px; background: rgba(255,255,252,.64); }
+.applicationWorkspace { display: grid; gap: 12px; }
+.myApplicationList { display: grid; gap: 10px; }
+.myApplicationCard { min-height: 108px; padding: 18px 20px; border: 1px solid rgba(255,255,255,.92); border-radius: 18px; background: rgba(255,255,252,.76); color: var(--ink); display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; align-items: center; gap: 16px; text-align: left; box-shadow: 0 10px 28px rgba(18,19,15,.03); }
+.myApplicationCard > div:nth-child(2) { display: grid; gap: 4px; }
+.myApplicationCard > div:nth-child(2) > strong { font-size: 13px; }
+.myApplicationCard > div:nth-child(2) > span { color: var(--muted); font-size: 9px; }
+.myApplicationCard p { overflow: hidden; margin: 5px 0 0; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.myApplicationCard > svg { width: 16px; }
+.applicationReward { display: grid; gap: 4px; text-align: right; }
+.applicationReward strong { font-size: 11px; }
+.applicationReward span { color: var(--muted); font-size: 9px; }
+.applicationState { width: fit-content; padding: 6px 9px; border-radius: 999px; background: #ecece8; color: var(--muted); font-size: 8px; font-weight: 800; }
+.state-accepted { background: #e8f2eb; color: var(--green); }
+.state-rejected,.state-withdrawn { background: #f2eaea; color: #8e4545; }
+.candidateList { display: grid; gap: 9px; }
+.candidateCard { padding: 15px; border: 1px solid var(--line); border-radius: 16px; background: white; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 13px; }
+.candidateAvatar { width: 38px; height: 38px; border-radius: 50%; background-color: #ecece7; background-position: center; background-size: cover; display: grid; place-items: center; font-size: 10px; font-weight: 750; }
+.candidateCard > div { min-width: 0; }
+.candidateCard > div > strong { font-size: 12px; }
+.candidateCard p { margin: 5px 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.candidateCard small { color: #9b9d96; font-size: 8px; }
+.candidateCard .secondaryButton { padding: 9px 13px; font-size: 10px; }
+.applicationForm { display: grid; gap: 10px; }
+.applicationForm textarea { width: 100%; border: 1px solid var(--line); border-radius: 14px; background: white; padding: 13px 14px; outline: none; resize: vertical; }
+.applicationForm textarea:focus { border-color: #8d8f86; box-shadow: 0 0 0 4px rgba(18,19,15,.05); }
+.applicationForm > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.applicationForm small { color: var(--muted); font-size: 9px; }
+.applicationSent,.assignedNotice { padding: 15px; border-radius: 15px; background: #eef3ed; display: flex; align-items: flex-start; gap: 12px; }
+.applicationSent > div,.assignedNotice p { margin: 0; display: grid; gap: 5px; }
+.applicationSent strong,.assignedNotice strong { font-size: 11px; }
+.applicationSent p,.assignedNotice small { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.assignedNotice { margin-top: 18px; align-items: center; }
+.maintainerReview { margin-top: 20px; padding: 18px; border: 1px solid #d9e8dd; border-radius: 17px; background: #f2f7f3; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.maintainerReview > div:first-child { display: grid; gap: 5px; }
+.maintainerReview strong { font-size: 12px; }
+.maintainerReview p { margin: 0; color: var(--muted); font-size: 10px; }
+.maintainerReview > div:last-child { display: flex; gap: 8px; flex: 0 0 auto; }
 
 /* Bounty wizard */
 .bountyWizard { width: min(760px,100%); padding: 0; overflow: hidden; }
@@ -542,6 +579,14 @@ a { color: inherit; text-decoration: none; }
   .marketplaceCount { width: 100%; }
   .marketplaceGrid { grid-template-columns: 1fr; }
   .marketplaceCard { min-height: 278px; }
+  .myApplicationCard { grid-template-columns: auto minmax(0,1fr) auto; }
+  .applicationReward { grid-column: 2; text-align: left; }
+  .myApplicationCard > svg { grid-column: 3; grid-row: 1 / 3; }
+  .candidateCard { grid-template-columns: auto minmax(0,1fr); }
+  .candidateCard > button,.candidateCard > .applicationState { grid-column: 2; }
+  .applicationForm > div,.maintainerReview { align-items: stretch; flex-direction: column; }
+  .maintainerReview > div:last-child { width: 100%; }
+  .maintainerReview button { flex: 1; }
   .pathChooser { grid-template-columns: 1fr; }
   .pathIntro { grid-column: auto; padding: 6px 0 12px; }
   .pathCard { min-height: 190px; }

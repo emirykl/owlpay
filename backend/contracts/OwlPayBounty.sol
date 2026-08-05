@@ -15,6 +15,7 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
     enum Status {
         None,
         Open,
+        Assigned,
         Submitted,
         RevisionRequired,
         HumanReview,
@@ -51,6 +52,7 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
         uint256 deadline,
         bytes32 taskHash
     );
+    event DeveloperAssigned(uint256 indexed bountyId, address indexed developer);
     event WorkSubmitted(uint256 indexed bountyId, address indexed developer, bytes32 indexed submissionHash);
     event VerificationSpendRecorded(uint256 indexed bountyId, bytes32 indexed paymentReference, uint256 amount);
     event RevisionRequested(uint256 indexed bountyId, bytes32 indexed verificationHash);
@@ -109,22 +111,27 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
 
     function submitWork(uint256 bountyId, bytes32 submissionHash) external whenNotPaused {
         Bounty storage bounty = _requireBounty(bountyId);
-        if (bounty.status != Status.Open && bounty.status != Status.RevisionRequired) revert InvalidState(bounty.status);
+        if (bounty.status != Status.Assigned && bounty.status != Status.RevisionRequired) revert InvalidState(bounty.status);
         if (block.timestamp > bounty.deadline) revert DeadlinePassed();
         if (submissionHash == bytes32(0)) revert InvalidAmount();
         if (usedSubmissionHashes[submissionHash]) revert SubmissionAlreadyUsed();
-
-        if (bounty.developer == address(0)) {
-            bounty.developer = msg.sender;
-        } else if (bounty.developer != msg.sender) {
-            revert InvalidAddress();
-        }
+        if (bounty.developer != msg.sender) revert InvalidAddress();
 
         usedSubmissionHashes[submissionHash] = true;
         bounty.submissionHash = submissionHash;
         bounty.verificationHash = bytes32(0);
         bounty.status = Status.Submitted;
         emit WorkSubmitted(bountyId, msg.sender, submissionHash);
+    }
+
+    function assignDeveloper(uint256 bountyId, address developer) external whenNotPaused {
+        Bounty storage bounty = _requireBounty(bountyId);
+        if (msg.sender != bounty.owner) revert NotBountyOwner();
+        if (bounty.status != Status.Open) revert InvalidState(bounty.status);
+        if (developer == address(0)) revert InvalidAddress();
+        bounty.developer = developer;
+        bounty.status = Status.Assigned;
+        emit DeveloperAssigned(bountyId, developer);
     }
 
     /// @notice Records an off-chain GOAT Flow/x402 verification payment for audit and cap enforcement.
@@ -218,4 +225,3 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
         if (bounty.status != Status.Submitted) revert InvalidState(bounty.status);
     }
 }
-

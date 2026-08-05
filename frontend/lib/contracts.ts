@@ -2,6 +2,8 @@ import { parseAbi } from 'viem';
 
 export const owlPayAbi = parseAbi([
   'function createBounty(address paymentToken, uint128 rewardAmount, uint128 verificationBudget, uint64 deadline, bytes32 taskHash) returns (uint256 bountyId)',
+  'function assignDeveloper(uint256 bountyId, address developer)',
+  'function submitWork(uint256 bountyId, bytes32 submissionHash)',
   'event BountyCreated(uint256 indexed bountyId, address indexed owner, address indexed paymentToken, uint256 rewardAmount, uint256 verificationBudget, uint256 deadline, bytes32 taskHash)'
 ]);
 
@@ -16,4 +18,3 @@ export const contractsReady = Boolean(
   contractAddress && /^0x[a-fA-F0-9]{40}$/.test(contractAddress)
   && paymentTokenAddress && /^0x[a-fA-F0-9]{40}$/.test(paymentTokenAddress)
 );
-
