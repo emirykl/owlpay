@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { owlpayApi } from '@/lib/api';
 import { useAuth } from './auth-provider';
 import { useWallet } from './wallet-provider';
+import { LinkMark } from './icons';
 
 export function IdentityButton() {
   const queryClient = useQueryClient();
@@ -31,6 +32,7 @@ export function IdentityButton() {
   if (linked) return null;
   return (
     <button className="identityButton" onClick={() => mutation.mutate()} disabled={mutation.isPending} title={mutation.error?.message}>
+      <LinkMark />
       {mutation.isPending ? 'Signing…' : mutation.isError ? 'Try link again' : 'Link accounts'}
     </button>
   );
