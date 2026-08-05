@@ -5,7 +5,7 @@ import { useState, type FormEvent } from 'react';
 import { encodeFunctionData } from 'viem';
 import type { Bounty, BountyApplication } from '@/lib/api';
 import { owlpayApi } from '@/lib/api';
-import { contractAddress, contractsReady, owlPayAbi } from '@/lib/contracts';
+import { contractAddress, contractsReady, erc20Abi, owlPayAbi } from '@/lib/contracts';
 import { goatPublicClient, goatTestnet } from '@/lib/network';
 import { ArrowUpRight, Check, GitHubMark, LinkMark, MetaMaskMark } from './icons';
 import { useAuth } from './auth-provider';
@@ -81,8 +81,39 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
       return owlpayApi.submitWork(bounty.id, pullRequestUrl, address, submissionTxHash);
     },
     onSuccess: async (result) => {
-      setSuccess(`Commit ${result.evidence.headSha.slice(0, 8)} is queued for Owl Agent verification.`);
+      setSuccess(bounty.reviewPaymentStatus === 'PAID'
+        ? `Commit ${result.evidence.headSha.slice(0, 8)} submitted. Owl Agent review started automatically.`
+        : `Commit ${result.evidence.headSha.slice(0, 8)} submitted. The maintainer must purchase the review package.`);
       queryClient.setQueryData(['bounty', bounty.id], result.bounty);
+      await queryClient.invalidateQueries({ queryKey: ['bounties'] });
+    }
+  });
+  const purchaseReviewMutation = useMutation({
+    mutationFn: async () => {
+      if (!address || address.toLowerCase() !== bounty.ownerAddress.toLowerCase()) {
+        throw new Error('Connect the wallet that created this bounty.');
+      }
+      const requirement = await owlpayApi.requestReviewPayment(bounty.id);
+      const option = requirement.accepts[0];
+      if (!option || option.network !== 'eip155:48816') throw new Error('No supported GOAT Testnet3 payment option was returned.');
+      const txHash = await sendTransaction({
+        to: option.asset,
+        data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [option.payTo, BigInt(option.amount)] })
+      });
+      await goatPublicClient.waitForTransactionReceipt({ hash: txHash });
+      return owlpayApi.confirmReviewPayment(bounty.id, txHash);
+    },
+    onSuccess: async (updated) => {
+      setSuccess('Owl Agent review package purchased. It will be consumed by this bounty submission only.');
+      queryClient.setQueryData(['bounty', bounty.id], updated);
+      await queryClient.invalidateQueries({ queryKey: ['bounties'] });
+    }
+  });
+  const agentReviewMutation = useMutation({
+    mutationFn: () => owlpayApi.runReview(bounty.id),
+    onSuccess: async (updated) => {
+      setSuccess('Owl Agent report is ready for your decision.');
+      queryClient.setQueryData(['bounty', bounty.id], updated);
       await queryClient.invalidateQueries({ queryKey: ['bounties'] });
     }
   });
@@ -152,6 +183,15 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
         {bounty.assignedDeveloperGithubLogin && <div className="assignedNotice"><span className="statusDot" /><p><strong>Assigned to @{bounty.assignedDeveloperGithubLogin}</strong><small>Only the selected developer can submit work.</small></p></div>}
 
         {bounty.submission && <div className="submissionCard"><span>Submitted commit</span><strong>{bounty.submission.commitSha.slice(0, 10)}</strong><a href={bounty.submission.pullRequestUrl} target="_blank" rel="noreferrer">Open pull request <ArrowUpRight /></a></div>}
+
+        {isOwner && bounty.status !== 'DRAFT' && bounty.reviewPaymentStatus === 'REQUIRED' && (
+          <div className="maintainerReview"><div><strong>Owl Agent review · {bounty.reviewPrice} USDC</strong><p>A one-time x402 payment by the repository owner. It never reduces the developer reward.</p></div><button className="primaryButton" onClick={() => purchaseReviewMutation.mutate()} disabled={purchaseReviewMutation.isPending}>{purchaseReviewMutation.isPending ? 'Confirming payment…' : `Purchase ${bounty.reviewPlan === 'SECURITY' ? 'security' : 'standard'} review`}</button></div>
+        )}
+        {isOwner && bounty.reviewPaymentStatus === 'PAID' && (
+          <div className="maintainerReview"><div><strong>Review package ready</strong><p>{bounty.status === 'SUBMITTED' ? 'The pull request is ready for the Owl Agent evidence scan.' : 'The review starts automatically after the assigned developer submits a pull request.'}</p></div>{bounty.status === 'SUBMITTED' && <button className="primaryButton" onClick={() => agentReviewMutation.mutate()} disabled={agentReviewMutation.isPending}>{agentReviewMutation.isPending ? 'Analyzing GitHub evidence…' : 'Run Owl Agent'}</button>}</div>
+        )}
+        {purchaseReviewMutation.error && <p className="formError" role="alert">{purchaseReviewMutation.error.message}</p>}
+        {agentReviewMutation.error && <p className="formError" role="alert">{agentReviewMutation.error.message}</p>}
 
         {bounty.decision && <div className={`decisionCard decision-${bounty.decision.decision.toLowerCase()}`}><span>Owl Agent report · {Math.round(bounty.decision.confidence * 100)}%</span><h3>{bounty.decision.decision.replaceAll('_', ' ')}</h3><p>{bounty.decision.summary}</p>{bounty.decision.blockingIssues.map((issue) => <small key={issue}>{issue}</small>)}</div>}
 

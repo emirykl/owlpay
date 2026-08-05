@@ -1,11 +1,13 @@
 # OwlPay MVP
 
-OwlPay is a testnet-first GitHub bounty verification and settlement prototype.
+OwlPay is a testnet-first GitHub bounty marketplace with evidence-based settlement.
 
 - `frontend/`: responsive Next.js dashboard and wallet experience
 - `backend/`: Fastify API, deterministic verification policy, GitHub evidence adapter, GOAT Testnet3 client and Solidity contracts
 
-The first milestone intentionally defaults to demo mode. No private key is required to run the product locally. Real testnet writes are enabled only after contract deployment and explicit environment configuration.
+The MVP supports GitHub owner verification, applications and assignment, PR submission, a one-time x402-style Owl Agent review purchase, deterministic GitHub/CI/static evidence analysis, maintainer approval, and GOAT Testnet3 escrow settlement. The contract sends 97% of the gross reward to the selected developer and 3% to the immutable OwlPay treasury.
+
+The project defaults to safe demo mode. No private key is required locally. Real testnet writes are enabled only after deployment and explicit environment configuration.
 
 ## Quick start
 
@@ -27,5 +29,4 @@ npm run dev
 
 Open `http://localhost:3000`. The API runs at `http://localhost:4000`.
 
-See each application's README for testnet deployment and security notes.
-
+See each application's README for Supabase migration, testnet deployment, and security notes.

@@ -1,4 +1,4 @@
-import type { Bounty, BountyApplication } from '../domain/schemas.js';
+import type { Bounty, BountyApplication, Criterion, VerificationInput } from '../domain/schemas.js';
 
 export interface BountyRepository {
   list(): Promise<Bounty[]>;
@@ -48,6 +48,17 @@ export interface ManageableRepository {
 
 export interface GitHubEvidenceProvider {
   getPullRequest(url: string): Promise<PullRequestEvidence>;
+  reviewPullRequest(url: string, criteria: Criterion[]): Promise<VerificationInput>;
   listManageableRepositories(providerToken: string, expectedUserId: number): Promise<ManageableRepository[]>;
   assertCanManageRepository(repositoryUrl: string, providerToken: string, expectedUserId: number): Promise<ManageableRepository>;
+}
+
+export interface ReviewPaymentVerifier {
+  verify(input: {
+    txHash: `0x${string}`;
+    payer: `0x${string}`;
+    token: `0x${string}`;
+    payTo: `0x${string}`;
+    amount: bigint;
+  }): Promise<void>;
 }

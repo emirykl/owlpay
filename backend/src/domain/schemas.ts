@@ -32,7 +32,7 @@ export const createBountySchema = z.object({
   repositoryUrl: z.string().url().regex(/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/),
   ownerAddress: addressSchema,
   rewardAmount: z.string().regex(/^\d+(\.\d{1,6})?$/),
-  verificationBudget: z.string().regex(/^\d+(\.\d{1,6})?$/),
+  reviewPlan: z.enum(['STANDARD', 'SECURITY']).default('STANDARD'),
   deadline: z.string().datetime(),
   criteria: z.array(criterionSchema).min(1).max(20)
 }).superRefine((value, context) => {
@@ -65,12 +65,7 @@ export const verificationInputSchema = z.object({
   confidence: z.number().min(0).max(1),
   criterionResults: z.array(criterionResultSchema),
   blockingIssues: z.array(z.string()).max(20).default([]),
-  paidVerification: z.object({
-    provider: z.string(),
-    commitSha: z.string().regex(/^[a-fA-F0-9]{40}$/),
-    reportHash: bytes32Schema,
-    price: z.string().regex(/^\d+(\.\d{1,6})?$/)
-  }).optional()
+  commitSha: z.string().regex(/^[a-fA-F0-9]{40}$/).optional()
 });
 
 export type Criterion = z.infer<typeof criterionSchema>;
@@ -80,6 +75,8 @@ export type SubmitWorkInput = z.infer<typeof submitWorkSchema>;
 export type VerificationInput = z.infer<typeof verificationInputSchema>;
 export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
+export type ReviewPlan = CreateBountyInput['reviewPlan'];
+export type ReviewPaymentStatus = 'REQUIRED' | 'PAID' | 'CONSUMED';
 
 export interface BountyApplication {
   id: string;
@@ -127,6 +124,11 @@ export interface Bounty extends CreateBountyInput {
   assignedAt?: string;
   assignmentTxHash?: string;
   applicantCount: number;
+  reviewPrice: string;
+  reviewPaymentStatus: ReviewPaymentStatus;
+  reviewPaymentTxHash?: string;
+  reviewPaidAt?: string;
+  reviewConsumedAt?: string;
   submission?: Submission;
   decision?: AgentDecision;
 }

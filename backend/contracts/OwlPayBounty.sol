@@ -7,10 +7,13 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+/// @notice GOAT Testnet3 bounty escrow. Review purchases are paid separately through x402.
 contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     bytes32 public constant SETTLEMENT_ROLE = keccak256("SETTLEMENT_ROLE");
+    uint16 public constant BPS_DENOMINATOR = 10_000;
+    uint16 public constant MAX_PLATFORM_FEE_BPS = 500;
 
     enum Status {
         None,
@@ -28,10 +31,7 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
     struct Bounty {
         address owner;
         address developer;
-        IERC20 paymentToken;
         uint128 rewardAmount;
-        uint128 verificationBudget;
-        uint128 verificationSpent;
         uint64 deadline;
         bytes32 taskHash;
         bytes32 submissionHash;
@@ -39,7 +39,11 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
         Status status;
     }
 
+    IERC20 public immutable paymentToken;
+    address public immutable treasury;
+    uint16 public immutable platformFeeBps;
     uint256 public nextBountyId = 1;
+
     mapping(uint256 bountyId => Bounty bounty) private _bounties;
     mapping(bytes32 submissionHash => bool used) public usedSubmissionHashes;
 
@@ -48,56 +52,68 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
         address indexed owner,
         address indexed paymentToken,
         uint256 rewardAmount,
-        uint256 verificationBudget,
         uint256 deadline,
         bytes32 taskHash
     );
     event DeveloperAssigned(uint256 indexed bountyId, address indexed developer);
     event WorkSubmitted(uint256 indexed bountyId, address indexed developer, bytes32 indexed submissionHash);
-    event VerificationSpendRecorded(uint256 indexed bountyId, bytes32 indexed paymentReference, uint256 amount);
     event RevisionRequested(uint256 indexed bountyId, bytes32 indexed verificationHash);
     event HumanReviewRequested(uint256 indexed bountyId, bytes32 indexed verificationHash);
     event SubmissionApproved(uint256 indexed bountyId, bytes32 indexed verificationHash);
-    event PaymentReleased(uint256 indexed bountyId, address indexed developer, uint256 amount);
+    event PaymentReleased(
+        uint256 indexed bountyId,
+        address indexed developer,
+        uint256 grossReward,
+        uint256 platformFee,
+        uint256 developerPayout
+    );
     event BountyRefunded(uint256 indexed bountyId, address indexed owner, uint256 amount);
-    event BountyCancelled(uint256 indexed bountyId);
+    event BountyCancelled(uint256 indexed bountyId, address indexed owner, uint256 amount);
 
     error InvalidAmount();
     error InvalidDeadline();
     error InvalidAddress();
+    error InvalidFee();
     error InvalidState(Status current);
     error NotBountyOwner();
     error DeadlinePassed();
     error DeadlineNotPassed();
     error SubmissionAlreadyUsed();
-    error VerificationBudgetExceeded();
 
-    constructor(address admin, address settlementAgent) {
-        if (admin == address(0) || settlementAgent == address(0)) revert InvalidAddress();
+    constructor(
+        address admin,
+        address settlementAgent,
+        address paymentTokenAddress,
+        address treasuryAddress,
+        uint16 feeBps
+    ) {
+        if (
+            admin == address(0) || settlementAgent == address(0) || paymentTokenAddress == address(0)
+                || treasuryAddress == address(0)
+        ) revert InvalidAddress();
+        if (feeBps > MAX_PLATFORM_FEE_BPS) revert InvalidFee();
+
+        paymentToken = IERC20(paymentTokenAddress);
+        treasury = treasuryAddress;
+        platformFeeBps = feeBps;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(SETTLEMENT_ROLE, settlementAgent);
     }
 
-    function createBounty(
-        address paymentToken,
-        uint128 rewardAmount,
-        uint128 verificationBudget,
-        uint64 deadline,
-        bytes32 taskHash
-    ) external whenNotPaused nonReentrant returns (uint256 bountyId) {
-        if (paymentToken == address(0)) revert InvalidAddress();
-        if (rewardAmount == 0) revert InvalidAmount();
+    function createBounty(uint128 rewardAmount, uint64 deadline, bytes32 taskHash)
+        external
+        whenNotPaused
+        nonReentrant
+        returns (uint256 bountyId)
+    {
+        if (rewardAmount == 0 || taskHash == bytes32(0)) revert InvalidAmount();
         if (deadline <= block.timestamp) revert InvalidDeadline();
-        if (taskHash == bytes32(0)) revert InvalidAmount();
 
         bountyId = nextBountyId++;
         _bounties[bountyId] = Bounty({
             owner: msg.sender,
             developer: address(0),
-            paymentToken: IERC20(paymentToken),
             rewardAmount: rewardAmount,
-            verificationBudget: verificationBudget,
-            verificationSpent: 0,
             deadline: deadline,
             taskHash: taskHash,
             submissionHash: bytes32(0),
@@ -105,8 +121,18 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
             status: Status.Open
         });
 
-        IERC20(paymentToken).safeTransferFrom(msg.sender, address(this), rewardAmount);
-        emit BountyCreated(bountyId, msg.sender, paymentToken, rewardAmount, verificationBudget, deadline, taskHash);
+        paymentToken.safeTransferFrom(msg.sender, address(this), rewardAmount);
+        emit BountyCreated(bountyId, msg.sender, address(paymentToken), rewardAmount, deadline, taskHash);
+    }
+
+    function assignDeveloper(uint256 bountyId, address developer) external whenNotPaused {
+        Bounty storage bounty = _requireBounty(bountyId);
+        if (msg.sender != bounty.owner) revert NotBountyOwner();
+        if (bounty.status != Status.Open) revert InvalidState(bounty.status);
+        if (developer == address(0)) revert InvalidAddress();
+        bounty.developer = developer;
+        bounty.status = Status.Assigned;
+        emit DeveloperAssigned(bountyId, developer);
     }
 
     function submitWork(uint256 bountyId, bytes32 submissionHash) external whenNotPaused {
@@ -124,33 +150,9 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
         emit WorkSubmitted(bountyId, msg.sender, submissionHash);
     }
 
-    function assignDeveloper(uint256 bountyId, address developer) external whenNotPaused {
-        Bounty storage bounty = _requireBounty(bountyId);
-        if (msg.sender != bounty.owner) revert NotBountyOwner();
-        if (bounty.status != Status.Open) revert InvalidState(bounty.status);
-        if (developer == address(0)) revert InvalidAddress();
-        bounty.developer = developer;
-        bounty.status = Status.Assigned;
-        emit DeveloperAssigned(bountyId, developer);
-    }
-
-    /// @notice Records an off-chain GOAT Flow/x402 verification payment for audit and cap enforcement.
-    /// The settlement wallet pays the verifier; this contract never grants arbitrary token transfers.
-    function recordVerificationSpend(uint256 bountyId, uint128 amount, bytes32 paymentReference)
-        external
-        onlyRole(SETTLEMENT_ROLE)
-    {
-        Bounty storage bounty = _requireBounty(bountyId);
-        if (bounty.status != Status.Submitted) revert InvalidState(bounty.status);
-        if (paymentReference == bytes32(0) || amount == 0) revert InvalidAmount();
-        uint256 newSpent = uint256(bounty.verificationSpent) + amount;
-        if (newSpent > bounty.verificationBudget) revert VerificationBudgetExceeded();
-        bounty.verificationSpent = uint128(newSpent);
-        emit VerificationSpendRecorded(bountyId, paymentReference, amount);
-    }
-
     function requestRevision(uint256 bountyId, bytes32 verificationHash) external onlyRole(SETTLEMENT_ROLE) {
         Bounty storage bounty = _requireSubmitted(bountyId);
+        if (verificationHash == bytes32(0)) revert InvalidAmount();
         bounty.verificationHash = verificationHash;
         bounty.status = Status.RevisionRequired;
         emit RevisionRequested(bountyId, verificationHash);
@@ -158,6 +160,7 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
 
     function requestHumanReview(uint256 bountyId, bytes32 verificationHash) external onlyRole(SETTLEMENT_ROLE) {
         Bounty storage bounty = _requireSubmitted(bountyId);
+        if (verificationHash == bytes32(0)) revert InvalidAmount();
         bounty.verificationHash = verificationHash;
         bounty.status = Status.HumanReview;
         emit HumanReviewRequested(bountyId, verificationHash);
@@ -174,11 +177,16 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
     function releasePayment(uint256 bountyId) external onlyRole(SETTLEMENT_ROLE) whenNotPaused nonReentrant {
         Bounty storage bounty = _requireBounty(bountyId);
         if (bounty.status != Status.Approved) revert InvalidState(bounty.status);
+
+        uint256 grossReward = bounty.rewardAmount;
+        uint256 platformFee = grossReward * platformFeeBps / BPS_DENOMINATOR;
+        uint256 developerPayout = grossReward - platformFee;
         address developer = bounty.developer;
-        uint256 reward = bounty.rewardAmount;
         bounty.status = Status.Paid;
-        bounty.paymentToken.safeTransfer(developer, reward);
-        emit PaymentReleased(bountyId, developer, reward);
+
+        if (platformFee != 0) paymentToken.safeTransfer(treasury, platformFee);
+        paymentToken.safeTransfer(developer, developerPayout);
+        emit PaymentReleased(bountyId, developer, grossReward, platformFee, developerPayout);
     }
 
     function refundExpiredBounty(uint256 bountyId) external whenNotPaused nonReentrant {
@@ -190,7 +198,7 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
                 || bounty.status == Status.Cancelled
         ) revert InvalidState(bounty.status);
         bounty.status = Status.Refunded;
-        bounty.paymentToken.safeTransfer(bounty.owner, bounty.rewardAmount);
+        paymentToken.safeTransfer(bounty.owner, bounty.rewardAmount);
         emit BountyRefunded(bountyId, bounty.owner, bounty.rewardAmount);
     }
 
@@ -199,8 +207,8 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
         if (msg.sender != bounty.owner) revert NotBountyOwner();
         if (bounty.status != Status.Open || bounty.developer != address(0)) revert InvalidState(bounty.status);
         bounty.status = Status.Cancelled;
-        bounty.paymentToken.safeTransfer(bounty.owner, bounty.rewardAmount);
-        emit BountyCancelled(bountyId);
+        paymentToken.safeTransfer(bounty.owner, bounty.rewardAmount);
+        emit BountyCancelled(bountyId, bounty.owner, bounty.rewardAmount);
     }
 
     function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -213,6 +221,11 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
 
     function getBounty(uint256 bountyId) external view returns (Bounty memory) {
         return _requireBounty(bountyId);
+    }
+
+    function previewPayout(uint256 grossReward) external view returns (uint256 platformFee, uint256 developerPayout) {
+        platformFee = grossReward * platformFeeBps / BPS_DENOMINATOR;
+        developerPayout = grossReward - platformFee;
     }
 
     function _requireBounty(uint256 bountyId) private view returns (Bounty storage bounty) {

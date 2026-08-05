@@ -23,7 +23,7 @@ describe('HTTP API', () => {
         repositoryUrl: 'https://github.com/owlpay/demo',
         ownerAddress: '0x0000000000000000000000000000000000000001',
         rewardAmount: '20',
-        verificationBudget: '0.5',
+        reviewPlan: 'STANDARD',
         deadline: new Date(Date.now() + 86_400_000).toISOString(),
         criteria: [{ id: 'health', description: 'GET /health returns HTTP 200', mandatory: true, method: 'ci' }]
       }
@@ -34,4 +34,3 @@ describe('HTTP API', () => {
     expect(list.json().items).toHaveLength(1);
   });
 });
-

@@ -17,7 +17,12 @@ export interface Bounty {
   repositoryUrl: string;
   ownerAddress: string;
   rewardAmount: string;
-  verificationBudget: string;
+  reviewPlan: 'STANDARD' | 'SECURITY';
+  reviewPrice: string;
+  reviewPaymentStatus: 'REQUIRED' | 'PAID' | 'CONSUMED';
+  reviewPaymentTxHash?: string;
+  reviewPaidAt?: string;
+  reviewConsumedAt?: string;
   deadline: string;
   criteria: Criterion[];
   status: BountyStatus;
@@ -66,6 +71,9 @@ export interface NetworkInfo {
   explorerUrl: string;
   writesEnabled: boolean;
   contractAddress: string | null;
+  paymentTokenAddress: string | null;
+  platformFeeBps: number;
+  reviewPrices: { standard: string; security: string };
   status: { connected: boolean; blockNumber: string | null };
 }
 
@@ -85,31 +93,50 @@ export interface ManageableRepository {
 }
 
 export type CreateBountyPayload = Pick<Bounty,
-  'title' | 'description' | 'repositoryUrl' | 'ownerAddress' | 'rewardAmount' | 'verificationBudget' | 'deadline' | 'criteria'
+  'title' | 'description' | 'repositoryUrl' | 'ownerAddress' | 'rewardAmount' | 'reviewPlan' | 'deadline' | 'criteria'
 >;
+
+export interface ReviewPaymentRequirement {
+  x402Version: 2;
+  orderId: string;
+  resource: { url: string; description: string; mimeType: string };
+  accepts: Array<{
+    scheme: 'exact';
+    network: 'eip155:48816';
+    amount: string;
+    asset: `0x${string}`;
+    payTo: `0x${string}`;
+    maxTimeoutSeconds: number;
+    extra: { name: string; version: string; decimals: number };
+  }>;
+}
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 async function api<T>(path: string, init?: RequestInit, githubAccess = false): Promise<T> {
-  const { getGitHubProviderToken, getSupabaseBrowserClient } = await import('./supabase');
-  const client = getSupabaseBrowserClient();
-  const session = client ? (await client.auth.getSession()).data.session : null;
-  const token = session?.access_token;
-  const githubToken = session?.provider_token ?? getGitHubProviderToken();
+  const headers = await authenticatedHeaders(githubAccess);
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(githubAccess && githubToken ? { 'X-GitHub-Token': githubToken } : {}),
-      ...init?.headers
-    }
+    headers: { ...headers, ...init?.headers }
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({ message: 'Request failed' })) as { message?: string };
     throw new Error(body.message ?? `Request failed (${response.status})`);
   }
   return response.json() as Promise<T>;
+}
+
+async function authenticatedHeaders(githubAccess = false) {
+  const { getGitHubProviderToken, getSupabaseBrowserClient } = await import('./supabase');
+  const client = getSupabaseBrowserClient();
+  const session = client ? (await client.auth.getSession()).data.session : null;
+  const token = session?.access_token;
+  const githubToken = session?.provider_token ?? getGitHubProviderToken();
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(githubAccess && githubToken ? { 'X-GitHub-Token': githubToken } : {})
+  };
 }
 
 export const owlpayApi = {
@@ -148,6 +175,18 @@ export const owlpayApi = {
       method: 'POST',
       body: JSON.stringify({ pullRequestUrl, developerAddress, submissionTxHash })
     }),
+  requestReviewPayment: async (id: string) => {
+    const response = await fetch(`${API_URL}/api/bounties/${id}/review-payment`, {
+      method: 'POST', headers: await authenticatedHeaders()
+    });
+    const body = await response.json().catch(() => ({ message: 'Payment requirement could not be loaded' })) as ReviewPaymentRequirement & { message?: string };
+    if (response.status !== 402) throw new Error(body.message ?? `Request failed (${response.status})`);
+    return body;
+  },
+  confirmReviewPayment: (id: string, txHash: string) => api<Bounty>(`/api/bounties/${id}/review-payment/confirm`, {
+    method: 'POST', body: JSON.stringify({ txHash })
+  }),
+  runReview: (id: string) => api<Bounty>(`/api/bounties/${id}/review/run`, { method: 'POST' }),
   approveBounty: (id: string) => api<Bounty>(`/api/bounties/${id}/approve`, { method: 'POST' }),
   requestBountyRevision: (id: string) => api<Bounty>(`/api/bounties/${id}/request-revision`, { method: 'POST' })
 };

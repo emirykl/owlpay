@@ -21,6 +21,9 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     rpcUrl: env.GOAT_RPC_URL,
     explorerUrl: env.GOAT_EXPLORER_URL,
     contractAddress: env.OWL_PAY_CONTRACT_ADDRESS || null,
+    paymentTokenAddress: env.PAYMENT_TOKEN_ADDRESS || null,
+    platformFeeBps: env.PLATFORM_FEE_BPS,
+    reviewPrices: { standard: env.STANDARD_REVIEW_PRICE, security: env.SECURITY_REVIEW_PRICE },
     writesEnabled: env.ENABLE_TESTNET_WRITES,
     status: await getNetworkStatus()
   }));
@@ -120,7 +123,30 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     const input = submitWorkSchema.parse(request.body);
     await walletIdentity.assertLinked(actor, input.developerAddress);
     const result = await service.submit(request.params.id, input, actor);
+    if (result.bounty.reviewPaymentStatus === 'PAID') {
+      void service.runPaidReview(request.params.id).catch((error) => request.log.error(error, 'Automatic Owl Agent review failed'));
+    }
     return reply.code(201).send(result);
+  });
+
+  app.post<{ Params: { id: string } }>('/api/bounties/:id/review-payment', async (request, reply) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    const requirement = await service.getReviewPaymentRequirement(request.params.id, actor);
+    return reply
+      .header('PAYMENT-REQUIRED', Buffer.from(JSON.stringify(requirement)).toString('base64'))
+      .code(402)
+      .send(requirement);
+  });
+
+  app.post<{ Params: { id: string } }>('/api/bounties/:id/review-payment/confirm', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    const body = request.body as { txHash?: string };
+    return service.confirmReviewPayment(request.params.id, bytes32Schema.parse(body.txHash) as `0x${string}`, actor);
+  });
+
+  app.post<{ Params: { id: string } }>('/api/bounties/:id/review/run', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    return service.runAutomatedReview(request.params.id, actor);
   });
 
   app.post<{ Params: { id: string } }>('/api/bounties/:id/verification', async (request) => {
