@@ -23,15 +23,15 @@ const statusLabels: Record<BountyStatus, string> = {
 };
 
 const viewCopy: Record<WorkspaceView, { eyebrow: string; title: string; copy: string }> = {
-  overview: { eyebrow: 'Workspace', title: 'Good work starts with a clear next step.', copy: 'Create funded work for your repository or find an open bounty to contribute to.' },
-  explore: { eyebrow: 'Marketplace', title: 'Explore open bounties.', copy: 'Review the reward and acceptance criteria before you start working on GitHub.' },
-  owned: { eyebrow: 'Repository owner', title: 'Your bounties.', copy: 'Track the work you funded from draft through verification and settlement.' },
-  submissions: { eyebrow: 'Developer', title: 'Your submissions.', copy: 'Follow the pull requests you submitted and the Owl Agent decision.' }
+  overview: { eyebrow: 'OwlPay workspace', title: 'Overview', copy: 'Choose an action or continue where you left off.' },
+  explore: { eyebrow: 'Marketplace', title: 'Explore bounties', copy: 'Open work with clear criteria and visible rewards.' },
+  owned: { eyebrow: 'Repository owner', title: 'My bounties', copy: 'Track work you created and funded.' },
+  submissions: { eyebrow: 'Developer', title: 'My submissions', copy: 'Follow your pull requests and verification results.' }
 };
 
 export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explore' }) {
   const reduceMotion = useReducedMotion();
-  const { githubLogin } = useAuth();
+  const { configured: authConfigured, githubLogin, signIn } = useAuth();
   const { address } = useWallet();
   const [view, setView] = useState<WorkspaceView>(initialIntent === 'explore' ? 'explore' : 'overview');
   const [creating, setCreating] = useState(initialIntent === 'create');
@@ -87,28 +87,25 @@ export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explo
 
           {view === 'overview' && (
             <>
-              <section className="pathChooser" aria-labelledby="path-title">
-                <div className="pathIntro"><span>Start here</span><h2 id="path-title">What do you want to do?</h2><p>You are never locked into a role. Choose the action that matches today.</p></div>
-                <motion.button className="pathCard ownerPath" whileHover={reduceMotion ? undefined : { y: -4 }} whileTap={{ scale: 0.99 }} onClick={() => setCreating(true)}>
-                  <span className="pathNumber">01</span><div><strong>Create a bounty</strong><p>I own a repository and want to fund a measurable outcome.</p></div><ArrowUpRight />
+              {authConfigured && !githubLogin && (
+                <button className="connectionHint" onClick={signIn}><span className="statusDot offline" /><span>Connect GitHub to create or submit work.</span><strong>Connect</strong></button>
+              )}
+
+              <section className="quickActions" aria-label="Quick actions">
+                <motion.button className="quickAction" whileHover={reduceMotion ? undefined : { y: -2 }} whileTap={{ scale: 0.99 }} onClick={() => setCreating(true)}>
+                  <span className="quickActionIcon">＋</span><div><strong>Create bounty</strong><small>Fund repository work</small></div><ArrowUpRight />
                 </motion.button>
-                <motion.button className="pathCard developerPath" whileHover={reduceMotion ? undefined : { y: -4 }} whileTap={{ scale: 0.99 }} onClick={() => setView('explore')}>
-                  <span className="pathNumber">02</span><div><strong>Explore bounties</strong><p>I am a developer and want to find clear, rewarded work.</p></div><ArrowUpRight />
+                <motion.button className="quickAction" whileHover={reduceMotion ? undefined : { y: -2 }} whileTap={{ scale: 0.99 }} onClick={() => setView('explore')}>
+                  <span className="quickActionIcon exploreIcon">⌕</span><div><strong>Explore bounties</strong><small>Find open work</small></div><ArrowUpRight />
                 </motion.button>
               </section>
 
-              <section className="setupBar">
-                <div><span className={githubLogin ? 'setupCheck done' : 'setupCheck'}>{githubLogin ? '✓' : '1'}</span><p><strong>GitHub</strong><small>{githubLogin ? `Connected as @${githubLogin}` : 'Connect when you select a repository'}</small></p></div>
+              <div className="compactStats" aria-label="Workspace status">
+                <div><strong>{active}</strong><span>active</span></div>
                 <i />
-                <div><span className={address ? 'setupCheck done' : 'setupCheck'}>{address ? '✓' : '2'}</span><p><strong>Wallet</strong><small>{address ? `${address.slice(0, 6)}…${address.slice(-4)}` : 'Connect when you fund or submit'}</small></p></div>
+                <div><strong>{locked.toFixed(2)}</strong><span>USDC locked</span></div>
                 <i />
-                <div><span className="setupCheck">3</span><p><strong>Take action</strong><small>Create a bounty or submit a pull request</small></p></div>
-              </section>
-
-              <div className="appMetrics">
-                <article><span>Locked rewards</span><strong>{locked.toFixed(2)} <small>USDC</small></strong><p>Across active bounties</p></article>
-                <article><span>Active bounties</span><strong>{active}</strong><p>Awaiting verified work</p></article>
-                <article><span>Agent network</span><strong className="networkMetric">{network.data?.status.connected ? 'Online' : 'Checking'}</strong><p>{network.data?.status.blockNumber ? `Block ${network.data.status.blockNumber}` : 'GOAT Testnet3'}</p></article>
+                <div><span className={`statusDot ${network.data?.status.connected ? '' : 'offline'}`} /><strong>{network.data?.status.connected ? 'Online' : 'Checking'}</strong><span>network</span></div>
               </div>
             </>
           )}
