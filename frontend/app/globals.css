@@ -270,11 +270,18 @@ a { color: inherit; text-decoration: none; }
 .sidebarNetwork small { color: var(--muted); font-size: 9px; }
 .backToSite { margin: 18px 10px 0; color: var(--muted); font-size: 10px; }
 .workspaceBody { min-width: 0; }
-.appHeader { height: 84px; position: sticky; z-index: 20; top: 0; padding: 0 34px; display: flex; align-items: center; justify-content: flex-end; border-bottom: 1px solid var(--line); background: rgba(240,241,237,.82); backdrop-filter: blur(22px); }
+.appHeader { height: 84px; position: sticky; z-index: 20; top: 0; padding: 0 34px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--line); background: rgba(240,241,237,.82); backdrop-filter: blur(22px); }
+.appHeaderTitle { min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+.appHeaderTitle strong { overflow: hidden; font-size: 16px; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
+.appHeaderTitle span { color: var(--muted); font-size: 9px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; }
+.appHeaderActions { display: flex; align-items: center; gap: 10px; }
+.headerNewBounty { height: 40px; padding: 0 15px; border: 0; border-radius: 999px; background: var(--ink); color: white; display: inline-flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 720; box-shadow: 0 9px 24px rgba(18,19,15,.13); }
+.headerNewBounty span { font-size: 15px; font-weight: 400; }
 .appConnections { display: flex; align-items: center; gap: 8px; }
 .appConnections .identityButton { position: static; }
 .mobileWorkspaceLabel { display: none; }
 .workspaceContent { width: min(1120px,calc(100% - 68px)); margin: 0 auto; padding-block: 52px 100px; }
+.workspaceContent.exploreWorkspace { padding-top: 28px; }
 .workspaceHeading { display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; margin-bottom: 38px; }
 .workspaceHeading .eyebrow { margin-bottom: 14px; }
 .workspaceHeading h1 { max-width: 790px; margin: 0; font-size: clamp(36px,4vw,48px); line-height: 1; letter-spacing: -.055em; }
@@ -335,42 +342,48 @@ a { color: inherit; text-decoration: none; }
 .appBountyPanel .panelHeader { padding: 19px 22px; }
 .appBountyPanel .bountyRow { transition: background .2s; }
 .appBountyPanel .bountyRow:hover { background: rgba(255,255,255,.62); }
-.marketplace { display: grid; gap: 16px; }
-.marketplaceToolbar { min-height: 54px; display: flex; align-items: center; gap: 12px; }
-.marketplaceSearch { width: min(330px,100%); height: 44px; padding: 0 14px; border: 1px solid rgba(18,19,15,.08); border-radius: 14px; background: rgba(255,255,252,.72); display: flex; align-items: center; gap: 9px; backdrop-filter: blur(18px); }
-.marketplaceSearch > span { color: var(--muted); font-size: 21px; line-height: 1; }
-.marketplaceSearch input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 11px; }
-.marketplaceSearch input::placeholder { color: #9a9c95; }
-.marketplaceFilters { display: flex; align-items: center; gap: 5px; }
-.marketplaceFilters button { height: 32px; padding: 0 11px; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--muted); font-size: 9px; font-weight: 700; }
-.marketplaceFilters button:hover { color: var(--ink); }
-.marketplaceFilters button.active { border-color: rgba(18,19,15,.08); background: rgba(255,255,252,.8); color: var(--ink); box-shadow: 0 3px 12px rgba(18,19,15,.035); }
-.marketplaceCount { margin-left: auto; color: var(--muted); font-size: 10px; white-space: nowrap; }
+.marketplace { display: block; }
+.marketplaceLayout { display: grid; grid-template-columns: minmax(0,1fr) 242px; align-items: start; gap: 18px; }
+.marketplaceResults { min-width: 0; }
+.marketplaceResultCount { height: 32px; color: var(--muted); font-size: 9px; }
+.marketplaceResultCount strong { color: var(--ink); font-size: 10px; }
 .marketplaceGrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
-.marketplaceCard { min-height: 292px; padding: 20px; border: 1px solid rgba(255,255,255,.94); border-radius: 21px; background: rgba(255,255,252,.76); color: var(--ink); text-align: left; box-shadow: 0 1px 2px rgba(18,19,15,.02),0 12px 32px rgba(18,19,15,.035); backdrop-filter: blur(20px); display: flex; flex-direction: column; transition: background .2s,border-color .2s,box-shadow .2s; }
+.marketplaceCard { min-height: 218px; padding: 17px; border: 1px solid rgba(255,255,255,.94); border-radius: 18px; background: rgba(255,255,252,.78); color: var(--ink); text-align: left; box-shadow: 0 1px 2px rgba(18,19,15,.02),0 10px 28px rgba(18,19,15,.035); backdrop-filter: blur(20px); display: flex; flex-direction: column; transition: background .2s,border-color .2s,box-shadow .2s; }
 .marketplaceCard:hover { background: rgba(255,255,255,.94); border-color: rgba(18,19,15,.09); box-shadow: 0 2px 3px rgba(18,19,15,.025),0 18px 42px rgba(18,19,15,.055); }
-.marketplaceCardTop { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.marketplaceCardTop { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .marketplaceRepo { min-width: 0; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 10px; }
 .marketplaceRepo > strong { overflow: hidden; color: var(--muted); font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.marketplaceAvatar { width: 36px; height: 36px; flex: 0 0 auto; border-radius: 50%; background-color: #e7e8e2; background-position: center; background-size: cover; display: grid; place-items: center; color: var(--muted); font-size: 10px; font-weight: 750; box-shadow: inset 0 0 0 1px rgba(18,19,15,.06); }
-.marketplaceReward { flex: 0 0 auto; padding: 7px 10px; border-radius: 999px; background: #edf5ef; color: var(--green); font-size: 9px; font-weight: 750; }
-.marketplaceCardBody { padding: 24px 0 18px; }
-.marketplaceCardBody h2 { margin: 0; font-size: 18px; line-height: 1.25; letter-spacing: -.035em; }
-.marketplaceCardBody p { margin: 9px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.marketplaceCriterion { margin-top: auto; padding: 12px 13px; border-radius: 13px; background: rgba(18,19,15,.035); display: grid; gap: 5px; }
-.marketplaceCriterion span { color: var(--muted); font-size: 8px; text-transform: uppercase; letter-spacing: .09em; }
-.marketplaceCriterion strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.marketplaceTags { min-height: 28px; margin-top: auto; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.marketplaceTags > span:not(.statusBadge) { padding: 5px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 8px; font-weight: 700; text-transform: uppercase; }
-.marketplaceCardFooter { margin-top: 16px; padding-top: 15px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 16px; }
+.marketplaceAvatar { width: 32px; height: 32px; flex: 0 0 auto; border-radius: 50%; background-color: #e7e8e2; background-position: center; background-size: cover; display: grid; place-items: center; color: var(--muted); font-size: 9px; font-weight: 750; box-shadow: inset 0 0 0 1px rgba(18,19,15,.06); }
+.marketplaceCardPills { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; }
+.marketplaceCardPills .statusBadge,.marketplaceReward { padding: 6px 8px; font-size: 8px; }
+.marketplaceReward { flex: 0 0 auto; border-radius: 999px; background: #edf5ef; color: var(--green); font-weight: 750; white-space: nowrap; }
+.marketplaceCardBody { padding: 20px 0 14px; }
+.marketplaceCardBody h2 { margin: 0; font-size: 16px; line-height: 1.25; letter-spacing: -.035em; }
+.marketplaceCardBody p { margin: 8px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.marketplaceCardFooter { margin-top: auto; padding-top: 13px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 15px; }
 .marketplaceCardFooter > div { display: flex; align-items: center; gap: 5px; }
 .marketplaceCardFooter > div:nth-child(2) { margin-left: 4px; text-align: left; }
 .marketplaceCardFooter strong { font-size: 9px; }
 .marketplaceCardFooter span { color: var(--muted); font-size: 8px; }
-.marketplaceCardFooter > svg { width: 17px; margin-left: auto; }
 .marketplaceCardFooter .metaIcon { width: 15px; height: 15px; display: grid; place-items: center; }
 .marketplaceCardFooter .metaIcon svg { width: 15px; }
 .marketplaceEmpty,.marketplaceLoading { min-height: 320px; border: 1px solid rgba(255,255,255,.9); border-radius: 20px; background: rgba(255,255,252,.64); }
+.marketplaceSidebar { position: sticky; top: 104px; display: grid; gap: 10px; }
+.marketplaceTotal,.marketplaceFilterPanel { border: 1px solid rgba(255,255,255,.94); background: rgba(255,255,252,.75); box-shadow: 0 1px 2px rgba(18,19,15,.02),0 10px 28px rgba(18,19,15,.03); backdrop-filter: blur(20px); }
+.marketplaceTotal { min-height: 112px; padding: 19px; border-radius: 18px; display: flex; flex-direction: column; justify-content: space-between; }
+.marketplaceTotal span,.filterPanelHeader > span { color: var(--muted); font-size: 8px; font-weight: 750; text-transform: uppercase; letter-spacing: .09em; }
+.marketplaceTotal strong { font-size: 34px; line-height: 1; letter-spacing: -.055em; }
+.marketplaceFilterPanel { padding: 19px; border-radius: 18px; display: grid; gap: 15px; }
+.filterPanelHeader { display: flex; align-items: center; justify-content: space-between; }
+.filterPanelHeader button { padding: 0; border: 0; background: transparent; color: var(--green); font-size: 8px; font-weight: 700; }
+.filterSearch { height: 40px; padding: 0 11px; border: 1px solid var(--line); border-radius: 11px; background: rgba(255,255,255,.7); display: flex; align-items: center; gap: 8px; }
+.filterSearch > span { color: var(--muted); font-size: 18px; }
+.filterSearch input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 10px; }
+.filterSearch input::placeholder { color: #9a9c95; }
+.filterDivider { height: 1px; background: var(--line); }
+.filterField { display: grid; gap: 7px; }
+.filterField > span { color: var(--muted); font-size: 9px; font-weight: 600; }
+.filterField select { width: 100%; height: 40px; padding: 0 30px 0 11px; border: 1px solid var(--line); border-radius: 11px; outline: 0; background: rgba(255,255,255,.72); color: var(--ink); font-size: 10px; }
 .applicationWorkspace { display: grid; gap: 12px; }
 .myApplicationList { display: grid; gap: 10px; }
 .myApplicationCard { min-height: 108px; padding: 18px 20px; border: 1px solid rgba(255,255,255,.92); border-radius: 18px; background: rgba(255,255,252,.76); color: var(--ink); display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; align-items: center; gap: 16px; text-align: left; box-shadow: 0 10px 28px rgba(18,19,15,.03); }
@@ -581,11 +594,10 @@ a { color: inherit; text-decoration: none; }
   .sidebarNetwork,.backToSite { display: none; }
   .appHeader { position: static; height: 72px; padding: 0 28px; }
   .workspaceContent { width: min(100% - 56px,1180px); padding-top: 52px; }
+  .workspaceContent.exploreWorkspace { padding-top: 24px; }
   .pathChooser { grid-template-columns: 1fr 1fr; }
   .pathIntro { min-height: auto; grid-column: 1 / -1; padding-inline: 0; }
-  .marketplaceToolbar { flex-wrap: wrap; }
-  .marketplaceSearch { flex: 1 1 280px; }
-  .marketplaceCount { margin-left: 0; }
+  .marketplaceLayout { grid-template-columns: minmax(0,1fr) 226px; }
 }
 
 @media (max-width: 720px) {
@@ -614,12 +626,18 @@ a { color: inherit; text-decoration: none; }
   .appSidebar .brandMark { width: 36px; height: 36px; }
   .appNavigation button { height: 38px; padding: 0 10px; font-size: 11px; }
   .appNavigation button > span { display: none; }
-  .appHeader { min-height: 74px; height: auto; padding: 12px 14px; }
-  .appConnections { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
+  .appHeader { min-height: 112px; height: auto; padding: 12px 14px; align-items: stretch; flex-direction: column; justify-content: center; gap: 10px; }
+  .appHeaderTitle strong { font-size: 14px; }
+  .appHeaderTitle span { display: none; }
+  .appHeaderActions { width: 100%; justify-content: space-between; }
+  .headerNewBounty { width: 40px; flex: 0 0 auto; padding: 0; justify-content: center; font-size: 0; }
+  .headerNewBounty span { font-size: 17px; }
+  .appConnections { min-width: 0; justify-content: flex-end; flex-wrap: wrap; }
   .appConnections .githubButton { max-width: 112px; }
   .appConnections .walletButton { min-width: 112px; }
   .appConnections .identityButton { position: static; height: 40px; }
   .workspaceContent { width: min(100% - 28px,1180px); padding-block: 42px 80px; }
+  .workspaceContent.exploreWorkspace { padding-top: 18px; }
   .workspaceHeading { align-items: flex-start; flex-direction: column; margin-bottom: 28px; }
   .workspaceHeading h1 { font-size: clamp(38px,12vw,54px); }
   .appPrimary { width: 100%; justify-content: center; }
@@ -628,12 +646,14 @@ a { color: inherit; text-decoration: none; }
   .compactStats { padding-inline: 4px; gap: 13px; overflow-x: auto; white-space: nowrap; }
   .compactStats > i { flex: 0 0 auto; }
   .compactStats > div { flex: 0 0 auto; }
-  .marketplaceFilters { width: 100%; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
-  .marketplaceFilters::-webkit-scrollbar { display: none; }
-  .marketplaceFilters button { flex: 0 0 auto; }
-  .marketplaceCount { width: 100%; }
+  .marketplaceLayout { grid-template-columns: 1fr; }
+  .marketplaceSidebar { position: static; order: -1; }
+  .marketplaceTotal { min-height: 82px; flex-direction: row; align-items: center; }
+  .marketplaceTotal strong { font-size: 30px; }
   .marketplaceGrid { grid-template-columns: 1fr; }
-  .marketplaceCard { min-height: 278px; }
+  .marketplaceCard { min-height: 218px; }
+  .marketplaceCardTop { align-items: flex-start; }
+  .marketplaceCardPills { flex-direction: column; align-items: flex-end; }
   .myApplicationCard { grid-template-columns: auto minmax(0,1fr) auto; }
   .applicationReward { grid-column: 2; text-align: left; }
   .myApplicationCard > svg { grid-column: 3; grid-row: 1 / 3; }

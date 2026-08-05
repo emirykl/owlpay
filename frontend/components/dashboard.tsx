@@ -15,7 +15,10 @@ import { useWallet } from './wallet-provider';
 import { owlpayApi, type Bounty, type BountyStatus } from '@/lib/api';
 
 type WorkspaceView = 'overview' | 'explore' | 'owned' | 'applications';
-type ExploreStatus = 'ALL' | 'OPEN' | 'SUBMITTED' | 'VERIFYING' | 'PAID';
+type ExploreStatus = 'ALL' | BountyStatus;
+type ExploreSort = 'RECENT' | 'REWARD_HIGH' | 'DEADLINE';
+
+const exploreStatuses: ExploreStatus[] = ['ALL', 'OPEN', 'ASSIGNED', 'SUBMITTED', 'VERIFYING', 'READY_FOR_REVIEW', 'PAID'];
 
 const statusLabels: Record<BountyStatus, string> = {
   DRAFT: 'Draft', OPEN: 'Open', ASSIGNED: 'Assigned', SUBMITTED: 'Submitted', VERIFYING: 'Verifying', READY_FOR_REVIEW: 'Ready for review',
@@ -56,10 +59,17 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
   const [exploreQuery, setExploreQuery] = useState('');
   const [exploreStatus, setExploreStatus] = useState<ExploreStatus>('ALL');
+  const [exploreRepository, setExploreRepository] = useState('ALL');
+  const [exploreSort, setExploreSort] = useState<ExploreSort>('RECENT');
   const bounties = useQuery({ queryKey: ['bounties'], queryFn: owlpayApi.listBounties, retry: 1 });
   const myApplications = useQuery({ queryKey: ['my-applications', user?.id], queryFn: owlpayApi.listMyApplications, enabled: view === 'applications' && Boolean(user), retry: false });
   const network = useQuery({ queryKey: ['network'], queryFn: owlpayApi.network, refetchInterval: 30_000, retry: 1 });
   const items = useMemo(() => bounties.data?.items ?? [], [bounties.data?.items]);
+  const publicItems = useMemo(() => items.filter((item) => item.status !== 'DRAFT'), [items]);
+  const repositories = useMemo(() => Array.from(new Map(publicItems.map((item) => {
+    const repository = repositoryMeta(item.repositoryUrl);
+    return [item.repositoryUrl, repository.fullName] as const;
+  })).entries()).sort((a, b) => a[1].localeCompare(b[1])), [publicItems]);
 
   useEffect(() => {
     if (initialIntent) window.history.replaceState(null, '', '/app');
@@ -75,13 +85,19 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
   const visibleItems = useMemo(() => {
     if (view === 'explore') {
       const query = exploreQuery.trim().toLowerCase();
-      return items.filter((item) => item.status !== 'DRAFT')
+      return publicItems
         .filter((item) => exploreStatus === 'ALL' || item.status === exploreStatus)
-        .filter((item) => !query || `${item.title} ${item.description} ${item.repositoryUrl}`.toLowerCase().includes(query));
+        .filter((item) => exploreRepository === 'ALL' || item.repositoryUrl === exploreRepository)
+        .filter((item) => !query || `${item.title} ${item.description} ${item.repositoryUrl}`.toLowerCase().includes(query))
+        .sort((a, b) => {
+          if (exploreSort === 'REWARD_HIGH') return Number(b.rewardAmount) - Number(a.rewardAmount);
+          if (exploreSort === 'DEADLINE') return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
     }
     if (view === 'owned') return address ? items.filter((item) => item.ownerAddress.toLowerCase() === address.toLowerCase()) : [];
     return items.slice(0, 6);
-  }, [address, exploreQuery, exploreStatus, items, view]);
+  }, [address, exploreQuery, exploreRepository, exploreSort, exploreStatus, items, publicItems, view]);
 
   const locked = items.filter((item) => !['PAID', 'REFUNDED', 'CANCELLED'].includes(item.status)).reduce((sum, item) => sum + Number(item.rewardAmount), 0);
   const active = items.filter((item) => ['OPEN', 'ASSIGNED', 'SUBMITTED', 'VERIFYING', 'READY_FOR_REVIEW', 'REVISION_REQUIRED'].includes(item.status)).length;
@@ -107,15 +123,18 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
 
       <div className="workspaceBody">
         <header className="appHeader">
-          <div><span className="mobileWorkspaceLabel">OwlPay workspace</span></div>
-          <div className="appConnections"><AuthButton /><WalletButton /><IdentityButton /></div>
+          <div className="appHeaderTitle"><strong>{copy.title}</strong>{view === 'explore' && <span>{publicItems.length} total</span>}</div>
+          <div className="appHeaderActions">
+            {view === 'explore' && <button className="headerNewBounty" onClick={() => setCreating(true)}>New bounty <span>＋</span></button>}
+            <div className="appConnections"><AuthButton /><WalletButton /><IdentityButton /></div>
+          </div>
         </header>
 
-        <motion.section className="workspaceContent" key={view} initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}>
-          <div className="workspaceHeading">
+        <motion.section className={`workspaceContent ${view === 'explore' ? 'exploreWorkspace' : ''}`} key={view} initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}>
+          {view !== 'explore' && <div className="workspaceHeading">
             <div><span className="eyebrow">{copy.eyebrow}</span><h1>{copy.title}</h1><p>{copy.copy}</p></div>
             {view !== 'applications' && <button className="primaryButton appPrimary" onClick={() => setCreating(true)}>New bounty <span>＋</span></button>}
-          </div>
+          </div>}
 
           {view === 'overview' && (
             <>
@@ -163,38 +182,46 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
             </section>
           ) : view === 'explore' ? (
             <section className="marketplace" aria-label="Public bounty marketplace">
-              <div className="marketplaceToolbar">
-                <label className="marketplaceSearch"><span>⌕</span><input value={exploreQuery} onChange={(event) => setExploreQuery(event.target.value)} placeholder="Search bounties or repositories" aria-label="Search bounties" /></label>
-                <div className="marketplaceFilters" aria-label="Filter by status">
-                  {(['ALL', 'OPEN', 'SUBMITTED', 'VERIFYING', 'PAID'] as ExploreStatus[]).map((status) => <button className={exploreStatus === status ? 'active' : ''} onClick={() => setExploreStatus(status)} key={status}>{status === 'ALL' ? 'All' : statusLabels[status]}</button>)}
+              <div className="marketplaceLayout">
+                <div className="marketplaceResults">
+                  <div className="marketplaceResultCount"><strong>{visibleItems.length}</strong> {visibleItems.length === 1 ? 'bounty' : 'bounties'}</div>
+                  {bounties.isLoading ? <div className="marketplaceLoading loadingRows"><i /><i /><i /></div> : bounties.isError ? (
+                    <div className="marketplaceEmpty emptyState"><h3>API is offline</h3><p>Start the backend on port 4000, then refresh this page.</p></div>
+                  ) : visibleItems.length === 0 ? (
+                    <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
+                  ) : (
+                    <div className="marketplaceGrid">{visibleItems.map((bounty) => {
+                      const repository = repositoryMeta(bounty.repositoryUrl);
+                      const applicants = bounty.applicantCount;
+                      return (
+                        <motion.button className="marketplaceCard" key={bounty.id} onClick={() => setSelectedBounty(bounty)} whileHover={reduceMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.995 }}>
+                          <div className="marketplaceCardTop">
+                            <div className="marketplaceRepo"><span className="marketplaceAvatar" role="img" aria-label={`${repository.owner} GitHub avatar`} style={{ backgroundImage: `url(${repository.avatarUrl})` }}>{repository.owner.slice(0, 1).toUpperCase()}</span><strong>{repository.fullName}</strong></div>
+                            <div className="marketplaceCardPills"><span className={`statusBadge status-${bounty.status.toLowerCase()}`}>{statusLabels[bounty.status]}</span><span className="marketplaceReward">{bounty.rewardAmount} USDC</span></div>
+                          </div>
+                          <div className="marketplaceCardBody"><h2>{bounty.title}</h2><p>{bounty.description}</p></div>
+                          <div className="marketplaceCardFooter">
+                            <div><span className="metaIcon"><Users /></span><strong>{applicants}</strong><span>{applicants === 1 ? 'applicant' : 'applicants'}</span></div>
+                            <div><span className="metaIcon"><Calendar /></span><strong>{remainingTime(bounty.deadline)}</strong></div>
+                          </div>
+                        </motion.button>
+                      );
+                    })}</div>
+                  )}
                 </div>
-                <span className="marketplaceCount">{visibleItems.length} bounties</span>
+
+                <aside className="marketplaceSidebar" aria-label="Bounty filters">
+                  <div className="marketplaceTotal"><span>Total bounties</span><strong>{publicItems.length}</strong></div>
+                  <div className="marketplaceFilterPanel">
+                    <div className="filterPanelHeader"><span>Filters</span>{(exploreQuery || exploreStatus !== 'ALL' || exploreRepository !== 'ALL' || exploreSort !== 'RECENT') && <button onClick={() => { setExploreQuery(''); setExploreStatus('ALL'); setExploreRepository('ALL'); setExploreSort('RECENT'); }}>Reset</button>}</div>
+                    <label className="filterSearch"><span>⌕</span><input value={exploreQuery} onChange={(event) => setExploreQuery(event.target.value)} placeholder="Search by title" aria-label="Search bounties" /></label>
+                    <i className="filterDivider" />
+                    <label className="filterField"><span>Status</span><select value={exploreStatus} onChange={(event) => setExploreStatus(event.target.value as ExploreStatus)}>{exploreStatuses.map((status) => <option key={status} value={status}>{status === 'ALL' ? 'All statuses' : statusLabels[status]}</option>)}</select></label>
+                    <label className="filterField"><span>Repository</span><select value={exploreRepository} onChange={(event) => setExploreRepository(event.target.value)}><option value="ALL">All repositories</option>{repositories.map(([url, name]) => <option key={url} value={url}>{name}</option>)}</select></label>
+                    <label className="filterField"><span>Sort by</span><select value={exploreSort} onChange={(event) => setExploreSort(event.target.value as ExploreSort)}><option value="RECENT">Most recent</option><option value="REWARD_HIGH">Highest reward</option><option value="DEADLINE">Deadline soonest</option></select></label>
+                  </div>
+                </aside>
               </div>
-              {bounties.isLoading ? <div className="marketplaceLoading loadingRows"><i /><i /><i /></div> : bounties.isError ? (
-                <div className="marketplaceEmpty emptyState"><h3>API is offline</h3><p>Start the backend on port 4000, then refresh this page.</p></div>
-              ) : visibleItems.length === 0 ? (
-                <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
-              ) : (
-                <div className="marketplaceGrid">{visibleItems.map((bounty) => {
-                  const repository = repositoryMeta(bounty.repositoryUrl);
-                  const applicants = bounty.applicantCount;
-                  return (
-                    <motion.button className="marketplaceCard" key={bounty.id} onClick={() => setSelectedBounty(bounty)} whileHover={reduceMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.995 }}>
-                      <div className="marketplaceCardTop">
-                        <div className="marketplaceRepo"><span className="marketplaceAvatar" role="img" aria-label={`${repository.owner} GitHub avatar`} style={{ backgroundImage: `url(${repository.avatarUrl})` }}>{repository.owner.slice(0, 1).toUpperCase()}</span><strong>{repository.fullName}</strong></div>
-                        <span className="marketplaceReward">{bounty.rewardAmount} USDC</span>
-                      </div>
-                      <div className="marketplaceCardBody"><h2>{bounty.title}</h2><p>{bounty.description}</p></div>
-                      <div className="marketplaceTags"><span className={`statusBadge status-${bounty.status.toLowerCase()}`}>{statusLabels[bounty.status]}</span>{bounty.criteria.slice(0, 2).map((criterion) => <span key={criterion.id}>{criterion.method.replace('-', ' ')}</span>)}</div>
-                      <div className="marketplaceCardFooter">
-                        <div><span className="metaIcon"><Users /></span><strong>{applicants}</strong><span>{applicants === 1 ? 'applicant' : 'applicants'}</span></div>
-                        <div><span className="metaIcon"><Calendar /></span><strong>{remainingTime(bounty.deadline)}</strong></div>
-                        <ArrowUpRight />
-                      </div>
-                    </motion.button>
-                  );
-                })}</div>
-              )}
             </section>
           ) : (
             <section className="appBountyPanel">
