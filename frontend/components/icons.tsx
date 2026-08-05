@@ -3,11 +3,10 @@ import type { SVGProps } from 'react';
 export function OwlMark(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 40 40" fill="none" aria-hidden="true" {...props}>
-      <rect width="40" height="40" rx="12" fill="currentColor" />
-      <path d="M10.5 13.2 16 16a10.7 10.7 0 0 1 8 0l5.5-2.8-1.1 8.5A8.6 8.6 0 0 1 20 29a8.6 8.6 0 0 1-8.4-7.3l-1.1-8.5Z" fill="#FAFAF7" />
-      <circle cx="16.2" cy="20.2" r="2.2" fill="currentColor" />
-      <circle cx="23.8" cy="20.2" r="2.2" fill="currentColor" />
-      <path d="m20 21.5 2 3h-4l2-3Z" fill="#D8A72D" />
+      <rect x=".5" y=".5" width="39" height="39" rx="11.5" fill="white" stroke="rgba(18,19,15,.1)" />
+      <svg x="3.5" y="2" width="33" height="36" viewBox="300 140 650 960" preserveAspectRatio="xMidYMid meet">
+        <image href="/owlpay-logo.png" width="1254" height="1254" />
+      </svg>
     </svg>
   );
 }
