@@ -26,7 +26,7 @@ a { color: inherit; text-decoration: none; }
 
 .nav { height: 84px; display: flex; align-items: center; justify-content: space-between; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; letter-spacing: -0.04em; }
-.brandMark { width: 38px; height: 38px; color: var(--ink); }
+.brandMark { width: 38px; height: 38px; color: var(--ink); filter: drop-shadow(0 5px 12px rgba(18,19,15,.08)); }
 .navMeta { display: flex; gap: 10px; align-items: center; }
 .networkPill, .walletButton, .githubButton, .demoPill { height: 42px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255,255,252,.64); padding: 0 16px; display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: 13px; font-weight: 600; backdrop-filter: blur(18px); }
 .githubButton { cursor: pointer; }

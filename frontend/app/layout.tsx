@@ -3,8 +3,14 @@ import { Providers } from '@/components/providers';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'OwlPay — Verified work, instant settlement',
-  description: 'Agent-native verification and payment infrastructure for GitHub bounties.'
+  title: 'OwlPay',
+  applicationName: 'OwlPay',
+  description: 'Agent-native verification and payment infrastructure for GitHub bounties.',
+  icons: {
+    icon: [{ url: '/owlpay-logo.png', type: 'image/png' }],
+    shortcut: '/owlpay-logo.png',
+    apple: '/owlpay-logo.png'
+  }
 };
 
 export const viewport: Viewport = {
@@ -22,4 +28,3 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     </html>
   );
 }
-
