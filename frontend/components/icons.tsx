@@ -20,3 +20,10 @@ export function Check(props: SVGProps<SVGSVGElement>) {
   return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" {...props}><path d="m5 10.3 3.2 3.2L15 6.7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
+export function Users(props: SVGProps<SVGSVGElement>) {
+  return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" {...props}><path d="M7.5 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm5.75-1a2.25 2.25 0 1 0 0-4.5M2.5 16.5v-1.25A3.75 3.75 0 0 1 6.25 11.5h2.5a3.75 3.75 0 0 1 3.75 3.75v1.25m.25-5a3.5 3.5 0 0 1 3.5 3.5v1" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
+export function Calendar(props: SVGProps<SVGSVGElement>) {
+  return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" {...props}><rect x="2.75" y="4.25" width="14.5" height="13" rx="2.25" stroke="currentColor" strokeWidth="1.45" /><path d="M6.25 2.5v3.25m7.5-3.25v3.25M2.75 8h14.5" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" /></svg>;
+}
