@@ -22,7 +22,10 @@ function resumeOAuthReturn(user: User | null) {
   if (!returnTo || !returnTo.startsWith('/app')) return;
   window.sessionStorage.removeItem(oauthReturnKey);
   const current = `${window.location.pathname}${window.location.search}`;
-  if (current !== returnTo) window.location.replace(returnTo);
+  if (current !== returnTo) {
+    if (window.location.pathname === '/auth/callback') window.setTimeout(() => window.location.replace(returnTo), 1200);
+    else window.location.replace(returnTo);
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -56,9 +59,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.sessionStorage.setItem(oauthReturnKey, returnTo);
     const { error } = await client.auth.signInWithOAuth({
       provider: 'github',
-      options: { redirectTo: `${window.location.origin}/app`, scopes: 'read:user' }
+      options: { redirectTo: `${window.location.origin}/auth/callback`, scopes: 'read:user' }
     });
-    if (error) throw error;
+    if (error) {
+      window.sessionStorage.removeItem(oauthReturnKey);
+      throw error;
+    }
   }, []);
 
   const signOut = useCallback(async () => {
@@ -67,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await client.auth.signOut();
     if (error) throw error;
     clearGitHubProviderToken();
+    window.sessionStorage.removeItem(oauthReturnKey);
   }, []);
 
   const metadata = user?.user_metadata as Record<string, unknown> | undefined;

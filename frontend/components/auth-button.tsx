@@ -65,5 +65,5 @@ export function AuthButton() {
       </div>
     );
   }
-  return <button className="githubButton providerButton" onClick={signIn}><span className="providerMark githubMark"><GitHubMark /></span>Connect GitHub</button>;
+  return <button type="button" className="githubButton providerButton" onClick={() => void signIn()}><span className="providerMark githubMark"><GitHubMark /></span>Connect GitHub</button>;
 }

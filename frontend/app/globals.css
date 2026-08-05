@@ -473,6 +473,40 @@ a { color: inherit; text-decoration: none; }
 .wizardActions .primaryButton { padding-inline: 20px; }
 .wizardActions .primaryButton:disabled { opacity: .42; cursor: not-allowed; }
 
+/* OAuth callback */
+.authCallbackPage { min-height: 100svh; position: relative; isolation: isolate; overflow: hidden; display: grid; place-items: center; padding: 28px; background: #f3f3ef; }
+.authCallbackPage::before { content: ""; position: absolute; z-index: -3; inset: 0; opacity: .34; background-image: radial-gradient(rgba(18,19,15,.12) .6px, transparent .6px); background-size: 18px 18px; mask-image: linear-gradient(to bottom,black,transparent 72%); }
+.callbackGlow { position: absolute; z-index: -2; width: min(46vw,560px); aspect-ratio: 1; border-radius: 50%; filter: blur(14px); opacity: .5; }
+.callbackGlowOne { top: -28%; right: -10%; background: radial-gradient(circle,rgba(218,180,78,.32),transparent 68%); }
+.callbackGlowTwo { bottom: -36%; left: -12%; background: radial-gradient(circle,rgba(51,120,87,.22),transparent 68%); }
+.authCallbackCard { width: min(540px,100%); min-height: 570px; padding: 34px; position: relative; overflow: hidden; border: 1px solid rgba(255,255,255,.92); border-radius: 34px; background: rgba(255,255,252,.76); box-shadow: 0 34px 100px rgba(28,29,23,.12), inset 0 1px 0 rgba(255,255,255,.96); backdrop-filter: blur(28px) saturate(125%); }
+.authCallbackCard::after { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(18,19,15,.025); }
+.callbackBrand { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 750; letter-spacing: -.035em; }
+.callbackBrand svg { width: 34px; height: 34px; color: var(--ink); }
+.providerBridge { height: 132px; margin: 38px 0 22px; display: flex; align-items: center; justify-content: center; }
+.bridgeProvider { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 21px; box-shadow: 0 14px 34px rgba(18,19,15,.1); }
+.bridgeProvider > svg { width: 31px; height: 31px; }
+.bridgeGithub { color: white; background: #171817; }
+.bridgeOwl { background: white; }
+.bridgeOwl > svg { width: 42px; height: 42px; color: var(--ink); }
+.bridgeLine { width: 88px; height: 1px; position: relative; overflow: hidden; background: rgba(18,19,15,.12); }
+.bridgeLine i { width: 40%; height: 100%; position: absolute; left: 0; background: linear-gradient(90deg,transparent,var(--green),transparent); }
+.callbackCopy { text-align: center; }
+.callbackCopy .eyebrow { margin-bottom: 14px; color: var(--green); }
+.callbackCopy h1 { margin: 0; font-size: clamp(30px,6vw,42px); line-height: 1.02; letter-spacing: -.055em; }
+.callbackCopy p { min-height: 24px; max-width: 390px; margin: 14px auto 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.callbackAction { margin-top: 24px; display: inline-flex; }
+.callbackProgress { margin-top: 34px; padding-top: 22px; display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; border-top: 1px solid var(--line); }
+.callbackProgress > div { min-width: 0; display: grid; justify-items: center; gap: 8px; color: #a3a59e; text-align: center; }
+.callbackProgress span { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: rgba(255,255,255,.62); font-size: 8px; font-weight: 750; }
+.callbackProgress span svg { width: 13px; }
+.callbackProgress small { max-width: 105px; font-size: 8px; line-height: 1.35; }
+.callbackProgress .active { color: var(--ink); }
+.callbackProgress .active span { border-color: var(--ink); box-shadow: 0 0 0 5px rgba(18,19,15,.055); }
+.callbackProgress .complete { color: var(--green); }
+.callbackProgress .complete span { color: white; border-color: var(--green); background: var(--green); }
+.callbackPrivacy { margin-top: 26px; display: flex; justify-content: center; align-items: center; gap: 8px; color: var(--muted); font-size: 9px; }
+
 @media (max-width: 900px) {
   .hero { grid-template-columns: 1fr; gap: 54px; padding-top: 70px; }
   .heroCopy { text-align: center; }
@@ -634,6 +668,13 @@ a { color: inherit; text-decoration: none; }
   .reviewGrid { grid-template-columns: 1fr; }
   .reviewGrid > div + div { border-left: 0; border-top: 1px solid var(--line); }
   .wizardActions > button { flex: 1; }
+
+  .authCallbackPage { padding: 16px; }
+  .authCallbackCard { min-height: 540px; padding: 26px 20px; border-radius: 28px; }
+  .providerBridge { height: 112px; margin-top: 32px; }
+  .bridgeProvider { width: 58px; height: 58px; border-radius: 18px; }
+  .bridgeLine { width: 62px; }
+  .callbackProgress small { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
