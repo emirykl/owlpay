@@ -131,7 +131,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
           </div>
         </header>
 
-        <motion.section className={`workspaceContent ${view !== 'applications' ? 'exploreWorkspace' : ''}`} key={view} initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}>
+        <motion.section className={`workspaceContent ${view !== 'applications' ? 'exploreWorkspace' : ''} ${view === 'owned' ? 'ownedWorkspace' : ''}`} key={view} initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}>
           {view === 'applications' && <div className="workspaceHeading">
             <div><span className="eyebrow">{copy.eyebrow}</span><h1>{copy.title}</h1><p>{copy.copy}</p></div>
           </div>}
