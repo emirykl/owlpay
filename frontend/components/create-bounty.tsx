@@ -9,7 +9,7 @@ import { useWallet } from './wallet-provider';
 import { contractAddress, contractsReady, erc20Abi, owlPayAbi, paymentTokenAddress } from '@/lib/contracts';
 import { goatPublicClient } from '@/lib/network';
 import { useAuth } from './auth-provider';
-import { Check } from './icons';
+import { Check, GitHubMark, LinkMark, MetaMaskMark } from './icons';
 import { WalletButton } from './wallet-button';
 import { IdentityButton } from './identity-button';
 
@@ -137,11 +137,11 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
                 <>
                   <div className="stepCopy"><h3>Which repository needs work?</h3><p>We only show public repositories where your GitHub account has push, maintain, or admin access.</p></div>
                   {authConfigured && !user ? (
-                    <div className="connectionGate"><div><strong>Connect GitHub</strong><p>OwlPay needs your GitHub identity to verify repository ownership.</p></div><button type="button" className="secondaryButton" onClick={signIn}>Connect GitHub</button></div>
+                    <div className="connectionGate providerGate"><span className="connectionProviderIcon githubConnectionIcon"><GitHubMark /></span><div><strong>Connect GitHub</strong><p>OwlPay needs your GitHub identity to verify repository ownership.</p></div><button type="button" className="secondaryButton providerAction" onClick={signIn}><GitHubMark />Connect GitHub</button></div>
                   ) : authConfigured && repositories.isLoading ? (
                     <div className="connectionGate"><div><strong>Loading repositories…</strong><p>Checking access for @{githubLogin}.</p></div></div>
                   ) : authConfigured && repositories.isError ? (
-                    <div className="connectionGate errorGate"><div><strong>Reconnect GitHub</strong><p>{repositories.error.message}</p></div><button type="button" className="secondaryButton" onClick={signIn}>Authorize access</button></div>
+                    <div className="connectionGate errorGate providerGate"><span className="connectionProviderIcon githubConnectionIcon"><GitHubMark /></span><div><strong>Reconnect GitHub</strong><p>{repositories.error.message}</p></div><button type="button" className="secondaryButton providerAction" onClick={signIn}><GitHubMark />Authorize access</button></div>
                   ) : authConfigured && repositories.data?.items.length === 0 ? (
                     <div className="connectionGate"><div><strong>No manageable public repository</strong><p>You need push, maintain, or admin access for the MVP.</p></div></div>
                   ) : (
@@ -186,8 +186,8 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
                     <div className="reviewGrid"><div><span>Reward</span><strong>{rewardAmount} USDC</strong></div><div><span>Deadline</span><strong>{new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(deadline))}</strong></div></div>
                     <div className="reviewCriterion"><span><Check /></span><p><strong>Mandatory evidence</strong><small>{criterion}</small></p></div>
                   </div>
-                  {!address && <div className="connectionGate walletGate"><div><strong>Connect MetaMask to fund</strong><p>Your connected address becomes the bounty owner on GOAT Testnet3.</p></div><WalletButton /></div>}
-                  {address && authConfigured && !identityLinked && <div className="connectionGate walletGate"><div><strong>Link GitHub and wallet</strong><p>Sign one verification message so OwlPay can bind this bounty to your identity.</p></div><IdentityButton /></div>}
+                  {!address && <div className="connectionGate walletGate providerGate"><span className="connectionProviderIcon metamaskConnectionIcon"><MetaMaskMark /></span><div><strong>Connect MetaMask to fund</strong><p>Your connected address becomes the bounty owner on GOAT Testnet3.</p></div><WalletButton /></div>}
+                  {address && authConfigured && !identityLinked && <div className="connectionGate walletGate providerGate"><span className="connectionProviderIcon linkConnectionIcon"><LinkMark /></span><div><strong>Link GitHub and wallet</strong><p>Sign one verification message so OwlPay can bind this bounty to your identity.</p></div><IdentityButton /></div>}
                   {address && (!authConfigured || identityLinked) && <div className="readyNotice"><span className="statusDot" /><p><strong>Identity ready</strong><small>@{githubLogin} · {address.slice(0, 8)}…{address.slice(-6)}</small></p></div>}
                 </>
               )}

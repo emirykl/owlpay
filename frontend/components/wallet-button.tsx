@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { goatTestnet } from '@/lib/network';
 import { useWallet } from './wallet-provider';
+import { MetaMaskMark } from './icons';
 
 export function WalletButton() {
   const { address, chainId, connect, disconnect, switchToGoat, isConnecting, error } = useWallet();
@@ -26,7 +27,7 @@ export function WalletButton() {
   }, [menuOpen]);
 
   if (address && chainId !== goatTestnet.id) {
-    return <button className="walletButton warning" onClick={switchToGoat}>Switch network</button>;
+    return <button className="walletButton warning providerButton" onClick={switchToGoat}><span className="providerMark metamaskMark"><MetaMaskMark /></span>Switch network</button>;
   }
 
   if (address) {
@@ -38,12 +39,12 @@ export function WalletButton() {
           aria-expanded={menuOpen}
           aria-haspopup="menu"
         >
-          <span className="statusDot" />
+          <span className="providerMark metamaskMark"><MetaMaskMark /></span>
           {address.slice(0, 5)}…{address.slice(-4)}
         </button>
         {menuOpen && (
           <div className="walletPopover" role="menu">
-            <div><span>Connected wallet</span><strong>{address.slice(0, 8)}…{address.slice(-6)}</strong></div>
+            <div className="providerPopoverIdentity"><span className="providerMark metamaskMark"><MetaMaskMark /></span><p><small>MetaMask connected</small><strong>{address.slice(0, 8)}…{address.slice(-6)}</strong></p><i className="statusDot" /></div>
             <button
               className="disconnectButton"
               role="menuitem"
@@ -59,7 +60,8 @@ export function WalletButton() {
   }
 
   return (
-    <button className="walletButton" disabled={isConnecting} onClick={connect} title={error ?? 'Connect with MetaMask'}>
+    <button className="walletButton providerButton" disabled={isConnecting} onClick={connect} title={error ?? 'Connect with MetaMask'}>
+      <span className="providerMark metamaskMark"><MetaMaskMark /></span>
       {isConnecting ? 'Opening MetaMask…' : error ? 'Try MetaMask again' : 'Connect MetaMask'}
     </button>
   );

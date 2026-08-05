@@ -31,10 +31,17 @@ a { color: inherit; text-decoration: none; }
 .networkPill, .walletButton, .githubButton, .demoPill { height: 42px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255,255,252,.64); padding: 0 16px; display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: 13px; font-weight: 600; backdrop-filter: blur(18px); }
 .githubButton { cursor: pointer; }
 .githubButton.connected { color: var(--green); background: #edf5ef; }
+.providerButton { padding-left: 10px; }
+.providerMark { width: 24px; height: 24px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 8px; background-position: center; background-size: cover; }
+.providerMark svg { width: 17px; height: 17px; }
+.githubMark { background-color: #171817; color: white; }
+.metamaskMark { background: #fff2e8; }
+.metamaskMark svg { width: 20px; height: 20px; }
 .demoPill { color: var(--muted); }
 .identityPill, .identityButton { height: 36px; border-radius: 999px; border: 1px solid var(--line); padding: 0 12px; display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 650; white-space: nowrap; }
 .identityPill { color: var(--green); background: #edf5ef; }
 .identityButton { background: #fff3d8; color: #6e4d00; cursor: pointer; }
+.identityButton svg { width: 15px; height: 15px; }
 .walletButton { background: var(--ink); color: white; border-color: var(--ink); min-width: 128px; justify-content: center; transition: transform .2s, background .2s; }
 .walletButton:hover { transform: translateY(-1px); background: #292a24; }
 .walletButton.connected { background: white; color: var(--ink); border-color: var(--line); }
@@ -49,6 +56,11 @@ a { color: inherit; text-decoration: none; }
 .githubPopover > div { display: grid; gap: 5px; padding: 6px 8px 12px; }
 .githubPopover span { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
 .githubPopover strong { font-size: 12px; }
+.walletPopover > .providerPopoverIdentity, .githubPopover > .providerPopoverIdentity { padding: 8px 7px 14px; display: flex; align-items: center; gap: 10px; }
+.providerPopoverIdentity p { min-width: 0; flex: 1; margin: 0; display: grid; gap: 3px; }
+.providerPopoverIdentity p small { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
+.providerPopoverIdentity p strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.providerPopoverIdentity > .statusDot { width: 7px; height: 7px; padding: 0; flex: 0 0 auto; background: #44b77b; }
 .disconnectButton { width: 100%; min-height: 40px; border: 0; border-radius: 11px; background: #fff0f0; color: #9d3131; font-size: 12px; font-weight: 700; }
 .disconnectButton:disabled { cursor: wait; opacity: .65; }
 .statusDot { width: 7px; height: 7px; border-radius: 50%; background: #44b77b; box-shadow: 0 0 0 3px rgba(68,183,123,.13); }
@@ -427,6 +439,15 @@ a { color: inherit; text-decoration: none; }
 .connectionGate div { display: grid; gap: 7px; }
 .connectionGate strong { font-size: 13px; }
 .connectionGate p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.providerGate { display: grid; grid-template-columns: auto minmax(0,1fr) auto; }
+.connectionProviderIcon { width: 46px; height: 46px; border-radius: 15px; display: grid; place-items: center; box-shadow: inset 0 0 0 1px rgba(18,19,15,.06); }
+.connectionProviderIcon svg { width: 24px; height: 24px; }
+.githubConnectionIcon { color: white; background: #171817; }
+.metamaskConnectionIcon { background: linear-gradient(145deg,#fff7f0,#ffe3cc); }
+.metamaskConnectionIcon svg { width: 29px; height: 29px; }
+.linkConnectionIcon { color: #725000; background: linear-gradient(145deg,#fff8e7,#ffe9ad); }
+.providerAction { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.providerAction svg { width: 17px; height: 17px; }
 .errorGate { background: #fff8e7; }
 .fieldHint { margin: 16px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .reviewCard { border: 1px solid var(--line); border-radius: 20px; overflow: hidden; background: white; }
@@ -606,6 +627,8 @@ a { color: inherit; text-decoration: none; }
   .wizardFieldGrid { grid-template-columns: 1fr; }
   .wizardField.full { grid-column: auto; }
   .connectionGate { align-items: flex-start; flex-direction: column; }
+  .connectionGate.providerGate { grid-template-columns: auto minmax(0,1fr); align-items: center; }
+  .providerGate > button,.providerGate > .walletMenu,.providerGate > .identityButton { grid-column: 1 / -1; }
   .connectionGate > button,.connectionGate .walletMenu { width: 100%; }
   .connectionGate .walletButton { width: 100%; }
   .reviewGrid { grid-template-columns: 1fr; }

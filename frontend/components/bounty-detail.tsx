@@ -7,7 +7,7 @@ import type { Bounty, BountyApplication } from '@/lib/api';
 import { owlpayApi } from '@/lib/api';
 import { contractAddress, contractsReady, owlPayAbi } from '@/lib/contracts';
 import { goatPublicClient, goatTestnet } from '@/lib/network';
-import { ArrowUpRight, Check } from './icons';
+import { ArrowUpRight, Check, GitHubMark, LinkMark, MetaMaskMark } from './icons';
 import { useAuth } from './auth-provider';
 import { useWallet } from './wallet-provider';
 import { WalletButton } from './wallet-button';
@@ -136,10 +136,10 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
         {bounty.status === 'OPEN' && !isOwner && (
           <div className="detailSection applicationSection">
             <div className="detailSectionTitle"><h3>Apply for this bounty</h3><span>Send a short note to the maintainer</span></div>
-            {configured && !user ? <button className="secondaryButton" onClick={signIn}>Connect GitHub</button> : !address ? (
-              <div className="connectionGate"><div><strong>Connect MetaMask</strong><p>Your verified wallet becomes the payout address if you are selected.</p></div><WalletButton /></div>
+            {configured && !user ? <button className="secondaryButton providerAction" onClick={signIn}><GitHubMark />Connect GitHub</button> : !address ? (
+              <div className="connectionGate providerGate"><span className="connectionProviderIcon metamaskConnectionIcon"><MetaMaskMark /></span><div><strong>Connect MetaMask</strong><p>Your verified wallet becomes the payout address if you are selected.</p></div><WalletButton /></div>
             ) : configured && !identityLinked ? (
-              <div className="connectionGate"><div><strong>Link GitHub and wallet</strong><p>Sign one message before applying.</p></div><IdentityButton /></div>
+              <div className="connectionGate providerGate"><span className="connectionProviderIcon linkConnectionIcon"><LinkMark /></span><div><strong>Link GitHub and wallet</strong><p>Sign one message before applying.</p></div><IdentityButton /></div>
             ) : myApplication ? (
               <div className="applicationSent"><span className={`applicationState state-${myApplication.status.toLowerCase()}`}>{myApplication.status}</span><div><strong>Application sent</strong><p>{myApplication.message}</p></div></div>
             ) : (

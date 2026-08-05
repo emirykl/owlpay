@@ -14,6 +14,16 @@ interface AuthState {
 }
 
 const AuthContext = createContext<AuthState | null>(null);
+const oauthReturnKey = 'owlpay.oauth.return-to';
+
+function resumeOAuthReturn(user: User | null) {
+  if (!user) return;
+  const returnTo = window.sessionStorage.getItem(oauthReturnKey);
+  if (!returnTo || !returnTo.startsWith('/app')) return;
+  window.sessionStorage.removeItem(oauthReturnKey);
+  const current = `${window.location.pathname}${window.location.search}`;
+  if (current !== returnTo) window.location.replace(returnTo);
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -26,11 +36,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       rememberGitHubProviderToken(data.session?.provider_token);
       setUser(data.session?.user ?? null);
       setLoading(false);
+      resumeOAuthReturn(data.session?.user ?? null);
     }).catch(() => setLoading(false));
     const { data } = client.auth.onAuthStateChange((event, session) => {
       rememberGitHubProviderToken(session?.provider_token);
       if (event === 'SIGNED_OUT') clearGitHubProviderToken();
       setUser(session?.user ?? null);
+      if (event === 'SIGNED_IN') resumeOAuthReturn(session?.user ?? null);
     });
     return () => data.subscription.unsubscribe();
   }, []);
@@ -38,9 +50,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(async () => {
     const client = getSupabaseBrowserClient();
     if (!client) return;
+    const returnTo = window.location.pathname.startsWith('/app')
+      ? `${window.location.pathname}${window.location.search}`
+      : '/app';
+    window.sessionStorage.setItem(oauthReturnKey, returnTo);
     const { error } = await client.auth.signInWithOAuth({
       provider: 'github',
-      options: { redirectTo: window.location.origin, scopes: 'read:user' }
+      options: { redirectTo: `${window.location.origin}/app`, scopes: 'read:user' }
     });
     if (error) throw error;
   }, []);

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { motion, useReducedMotion } from 'motion/react';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, Calendar, OwlMark, Users } from './icons';
+import { ArrowUpRight, Calendar, GitHubMark, OwlMark, Users } from './icons';
 import { WalletButton } from './wallet-button';
 import { CreateBounty } from './create-bounty';
 import { BountyDetail } from './bounty-detail';
@@ -47,11 +47,11 @@ function remainingTime(deadline: string) {
   return `${days} days left`;
 }
 
-export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explore' }) {
+export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'create' | 'explore'; initialView?: Exclude<WorkspaceView, 'overview'> }) {
   const reduceMotion = useReducedMotion();
   const { configured: authConfigured, user, githubLogin, signIn } = useAuth();
   const { address } = useWallet();
-  const [view, setView] = useState<WorkspaceView>(initialIntent === 'explore' ? 'explore' : 'overview');
+  const [view, setView] = useState<WorkspaceView>(initialIntent === 'explore' ? 'explore' : initialView ?? 'overview');
   const [creating, setCreating] = useState(initialIntent === 'create');
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
   const [exploreQuery, setExploreQuery] = useState('');
@@ -64,6 +64,13 @@ export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explo
   useEffect(() => {
     if (initialIntent) window.history.replaceState(null, '', '/app');
   }, [initialIntent]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (view === 'overview') url.searchParams.delete('view');
+    else url.searchParams.set('view', view);
+    window.history.replaceState(null, '', `${url.pathname}${url.search}`);
+  }, [view]);
 
   const visibleItems = useMemo(() => {
     if (view === 'explore') {
@@ -113,7 +120,7 @@ export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explo
           {view === 'overview' && (
             <>
               {authConfigured && !githubLogin && (
-                <button className="connectionHint" onClick={signIn}><span className="statusDot offline" /><span>Connect GitHub to create or submit work.</span><strong>Connect</strong></button>
+                <button className="connectionHint" onClick={signIn}><span className="providerMark githubMark"><GitHubMark /></span><span>Connect GitHub to create or submit work.</span><strong>Connect</strong></button>
               )}
 
               <section className="quickActions" aria-label="Quick actions">
@@ -138,7 +145,7 @@ export function Dashboard({ initialIntent }: { initialIntent?: 'create' | 'explo
           {view === 'applications' ? (
             <section className="applicationWorkspace">
               {!user ? (
-                <div className="marketplaceEmpty emptyState"><h3>Connect GitHub to see your applications</h3><p>Your application history is tied to your verified GitHub identity.</p><button className="secondaryButton" onClick={signIn}>Connect GitHub</button></div>
+                <div className="marketplaceEmpty emptyState"><h3>Connect GitHub to see your applications</h3><p>Your application history is tied to your verified GitHub identity.</p><button className="secondaryButton providerAction" onClick={signIn}><GitHubMark />Connect GitHub</button></div>
               ) : myApplications.isLoading ? <div className="marketplaceLoading loadingRows"><i /><i /><i /></div> : myApplications.isError ? (
                 <div className="marketplaceEmpty emptyState"><h3>Applications could not be loaded</h3><p>{myApplications.error.message}</p></div>
               ) : myApplications.data?.items.length === 0 ? (
