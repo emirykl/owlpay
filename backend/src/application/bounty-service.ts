@@ -322,7 +322,16 @@ export class BountyService {
       throw new DomainError('Bounty has no submission ready for review', 409, 'SUBMISSION_REQUIRED');
     }
     if (bounty.reviewPlan === 'NONE') throw new DomainError('This bounty uses manual review', 409, 'MANUAL_REVIEW_SELECTED');
-    const input = await this.github.reviewPullRequest(bounty.submission.pullRequestUrl, bounty.criteria, bounty.reviewPlan);
+    const input = await this.github.reviewPullRequest(
+      bounty.submission.pullRequestUrl,
+      bounty.criteria,
+      bounty.reviewPlan,
+      {
+        bountyTitle: bounty.title,
+        bountyDescription: bounty.description,
+        safetyIdentifier: createHash('sha256').update(bounty.ownerUserId ?? bounty.ownerAddress).digest('hex')
+      }
+    );
     return this.verify(id, input);
   }
 

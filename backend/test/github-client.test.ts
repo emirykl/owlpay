@@ -37,6 +37,54 @@ describe('GitHub repository authorization', () => {
   });
 });
 
+describe('GitHub review evidence', () => {
+  it('forwards commit-pinned files and checks to the configured AI reviewer', async () => {
+    const review = vi.fn(async () => ({
+      commitSha: 'a'.repeat(40),
+      confidence: 0.94,
+      criterionResults: [{ criterionId: 'implementation', status: 'PASSED' as const, evidence: ['file:src/app.ts'], summary: 'Implemented.' }],
+      blockingIssues: []
+    }));
+    const client = new GitHubClient('', { configured: true, review });
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({
+        state: 'open',
+        head: { sha: 'a'.repeat(40) },
+        changed_files: 1,
+        additions: 4,
+        deletions: 1,
+        user: { id: 7, login: 'developer' },
+        title: 'Implement endpoint',
+        body: 'Adds the requested endpoint.'
+      }))
+      .mockResolvedValueOnce(jsonResponse([{
+        filename: 'src/app.ts', status: 'modified', additions: 4, deletions: 1, changes: 5, patch: '@@ -1 +1 @@\n-old\n+new'
+      }]))
+      .mockResolvedValueOnce(jsonResponse({
+        check_runs: [{ name: 'unit-tests', status: 'completed', conclusion: 'success', html_url: 'https://github.com/check/1' }]
+      }));
+
+    const result = await client.reviewPullRequest(
+      'https://github.com/owlpay/demo/pull/42',
+      [{ id: 'implementation', description: 'Endpoint is implemented', mandatory: true, method: 'github' }],
+      'STANDARD',
+      { bountyTitle: 'Implement endpoint', bountyDescription: 'Add an endpoint.', safetyIdentifier: 'owner-hash' }
+    );
+
+    expect(result.confidence).toBe(0.94);
+    expect(review).toHaveBeenCalledWith(expect.objectContaining({
+      plan: 'STANDARD',
+      evidence: expect.objectContaining({
+        checksAvailable: true,
+        diffTruncated: false,
+        files: [expect.objectContaining({ filename: 'src/app.ts' })],
+        checks: [expect.objectContaining({ name: 'unit-tests', conclusion: 'success' })],
+        pullRequest: expect.objectContaining({ headSha: 'a'.repeat(40), body: 'Adds the requested endpoint.' })
+      })
+    }));
+  });
+});
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), { status, headers: { 'Content-Type': 'application/json' } });
 }

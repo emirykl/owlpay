@@ -25,6 +25,9 @@ const envSchema = z.object({
   ENABLE_TESTNET_WRITES: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   SETTLEMENT_PRIVATE_KEY: optionalPrivateKey.default(''),
   GITHUB_TOKEN: z.string().default(''),
+  OPENAI_API_KEY: z.string().default(''),
+  OPENAI_MODEL: z.string().min(1).default('gpt-5-nano'),
+  OPENAI_REVIEW_MAX_DIFF_CHARACTERS: z.coerce.number().int().min(1_000).max(250_000).default(60_000),
   GOAT_FLOW_API_URL: z.string().url().default('https://flow-api.testnet3.goat.network'),
   GOAT_FLOW_MERCHANT_ID: z.string().default(''),
   GOAT_FLOW_API_KEY: z.string().default(''),
@@ -66,6 +69,10 @@ if (parsed.data.ENABLE_TESTNET_WRITES && (!parsed.data.PAYMENT_TOKEN_ADDRESS || 
 
 if (parsed.data.NODE_ENV === 'production' && (!parsed.data.GOAT_FLOW_API_KEY || !parsed.data.GOAT_FLOW_API_SECRET || !parsed.data.GOAT_FLOW_TOKEN_ADDRESS)) {
   throw new Error('Production requires GOAT Flow merchant API credentials.');
+}
+
+if (parsed.data.NODE_ENV === 'production' && !parsed.data.OPENAI_API_KEY) {
+  throw new Error('Production requires an OpenAI API key for Owl Agent reviews.');
 }
 
 export const env = parsed.data;

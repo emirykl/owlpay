@@ -29,10 +29,16 @@ GitHub OAuth is also the authorization boundary for repository owners. OwlPay re
 3. The maintainer selects one application; the selected wallet is assigned on-chain.
 4. The maintainer purchases one Standard or Security review package. This is a separate pay-per-use payment and never reduces the developer reward.
 5. Only the assigned developer can submit a pull request. GitHub identity, repository, PR author and commit are verified before the submission hash is written on-chain.
-6. If the review is already paid, the Owl Agent starts automatically after submission. It reads GitHub checks and diff patches, rejects failed checks and obvious secret/TLS/code-execution risks, and escalates uncertain evidence to a human.
+6. If the review is already paid, the Owl Agent starts automatically after submission. It sends a bounded, commit-pinned GitHub evidence package to OpenAI, rejects failed checks and obvious secret/TLS/code-execution risks deterministically, and escalates uncertain evidence to a human.
 7. The maintainer requests a revision or approves the report. Approval records the report hash and releases 97% to the developer and 3% to the immutable treasury.
 
 The MVP deliberately does not execute untrusted repository code on the API server. It consumes GitHub CI results and performs a bounded patch scan. A production release should add an isolated, ephemeral CI worker and an independent smart-contract audit.
+
+## Owl Agent / OpenAI
+
+Set `OPENAI_API_KEY` only in the backend environment. `OPENAI_MODEL` defaults to the low-cost `gpt-5-nano`, and `OPENAI_REVIEW_MAX_DIFF_CHARACTERS` caps the patch text sent per review.
+
+Reviews use the OpenAI Responses API with strict structured output, low reasoning effort, `store: false`, and a hashed safety identifier. Pull-request text and patches are treated as untrusted evidence. Model-provided evidence references are checked against the exact commit, files, and GitHub checks supplied by OwlPay; unsupported passes become `UNKNOWN`. GitHub CI failures and the local Security-plan patch scan remain deterministic, and the existing verification policy makes the final approval/revision/human-review decision.
 
 ## Commands
 

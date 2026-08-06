@@ -13,6 +13,7 @@ import { SupabaseApplicationRepository } from './infrastructure/supabase-applica
 import { GoatSettlementGateway } from './infrastructure/goat-settlement-gateway.js';
 import { GoatReviewPaymentVerifier } from './infrastructure/goat-review-payment-verifier.js';
 import { GoatFlowReviewPaymentGateway } from './infrastructure/goat-flow-review-payment-gateway.js';
+import { OpenAIReviewAgent } from './infrastructure/openai-review-agent.js';
 import { createSupabaseAdminClient, SupabaseAuthVerifier } from './infrastructure/supabase-client.js';
 import { DemoAuthVerifier } from './application/auth.js';
 import { DemoWalletIdentity } from './infrastructure/demo-wallet-identity.js';
@@ -31,7 +32,11 @@ export function buildApp() {
   const service = new BountyService(
     repository,
     applications,
-    new GitHubClient(env.GITHUB_TOKEN),
+    new GitHubClient(env.GITHUB_TOKEN, new OpenAIReviewAgent({
+      apiKey: env.OPENAI_API_KEY,
+      model: env.OPENAI_MODEL,
+      maxDiffCharacters: env.OPENAI_REVIEW_MAX_DIFF_CHARACTERS
+    })),
     new VerificationPolicy(),
     new GoatSettlementGateway(),
     new GoatFlowReviewPaymentGateway({
