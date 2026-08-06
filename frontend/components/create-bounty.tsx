@@ -12,6 +12,7 @@ import { useAuth } from './auth-provider';
 import { Check, GitHubMark, LinkMark, MetaMaskMark } from './icons';
 import { WalletButton } from './wallet-button';
 import { IdentityButton } from './identity-button';
+import { getTransactionErrorMessage } from '@/lib/transaction-error';
 
 const steps = ['Repository', 'Details', 'Reward & review', 'Review & fund'];
 const HOUR = 3_600_000;
@@ -209,6 +210,8 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
   const visibleBalancesChecking = tokenBalance.data === undefined
     || Boolean(showSeparateReviewBalance && reviewTokenAddress && reviewTokenBalance.data === undefined);
   const balanceSummaryState = visibleBalancesChecking ? 'checking' : visibleBalancesCovered ? 'covered' : 'attention';
+  const claimErrorMessage = getTransactionErrorMessage(claimMutation.error, 'The token claim could not be completed. Please try again.');
+  const creationErrorMessage = getTransactionErrorMessage(mutation.error, 'The funding transaction could not be completed. Please try again.');
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -377,13 +380,13 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
                       </div>
                     </section>
                   )}
-                  {claimMutation.error && <p className="formError" role="alert">{claimMutation.error.message}</p>}
+                  {claimErrorMessage && <p className="formError" role="alert">{claimErrorMessage}</p>}
                 </>
               )}
             </motion.div>
           </AnimatePresence>
 
-          {(formError || mutation.error) && <p className="formError" role="alert">{formError ?? mutation.error?.message}</p>}
+          {(formError || creationErrorMessage) && <p className="formError" role="alert">{formError ?? creationErrorMessage}</p>}
           <div className="wizardActions">
             <button type="button" className="secondaryButton" onClick={() => step === 0 ? onClose() : setStep((current) => current - 1)}>{step === 0 ? 'Cancel' : 'Back'}</button>
             <button className="primaryButton" disabled={mutation.isPending || (step < 3 ? !canContinue : !address || !hasEnoughBalance || (authConfigured && !identityLinked))}>{mutation.isPending ? 'Creating…' : step < 3 ? 'Continue' : contractsReady ? reviewPlan === 'NONE' ? 'Fund on testnet' : 'Fund & pay review' : 'Create draft'}</button>
