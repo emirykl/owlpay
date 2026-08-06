@@ -78,6 +78,10 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     }
     return bounty;
   });
+  app.get<{ Params: { id: string } }>('/api/bounties/:id/submission-report-evidence', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    return service.getSubmissionReportEvidence(request.params.id, actor);
+  });
 
   app.post('/api/bounties', async (request, reply) => {
     const actor = await auth.requireUser(request.headers.authorization);

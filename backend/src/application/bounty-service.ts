@@ -218,6 +218,30 @@ export class BountyService {
     return Promise.all(applications.map(async (application) => ({ application, bounty: await this.get(application.bountyId) })));
   }
 
+  async getSubmissionReportEvidence(id: string, actor: AuthUser) {
+    const bounty = await this.get(id);
+    this.assertOwner(bounty, actor.id);
+    if (!bounty.submission) throw new DomainError('Bounty has no submitted pull request', 409, 'SUBMISSION_REQUIRED');
+    if (bounty.submission.changedFiles !== undefined) {
+      return {
+        author: bounty.submission.author,
+        changedFiles: bounty.submission.changedFiles,
+        additions: bounty.submission.additions ?? 0,
+        deletions: bounty.submission.deletions ?? 0
+      };
+    }
+    const evidence = await this.github.getPullRequest(bounty.submission.pullRequestUrl);
+    if (evidence.headSha !== bounty.submission.commitSha) {
+      throw new DomainError('The pull request changed after this report was created', 409, 'COMMIT_MISMATCH');
+    }
+    return {
+      author: evidence.author,
+      changedFiles: evidence.changedFiles,
+      additions: evidence.additions,
+      deletions: evidence.deletions
+    };
+  }
+
   async assign(id: string, applicationId: string, actor: AuthUser, assignmentTxHash?: string) {
     const bounty = await this.get(id);
     this.assertOwner(bounty, actor.id);
@@ -281,6 +305,10 @@ export class BountyService {
         developerUserId: actor.id,
         commitSha: evidence.headSha,
         submissionHash,
+        author: evidence.author,
+        changedFiles: evidence.changedFiles,
+        additions: evidence.additions,
+        deletions: evidence.deletions,
         ...(input.submissionTxHash ? { submissionTxHash: input.submissionTxHash } : {}),
         submittedAt: new Date().toISOString()
       }

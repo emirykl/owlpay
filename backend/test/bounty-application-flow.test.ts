@@ -271,7 +271,10 @@ describe('bounty application and assignment flow', () => {
     expect(assigned).toMatchObject({ status: 'ASSIGNED', assignedDeveloperUserId: developers[1]!.id });
     await expect(service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: applications[0]!.developerAddress }, developers[0]!)).rejects.toMatchObject({ code: 'DEVELOPER_NOT_ASSIGNED' });
 
-    await service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: applications[1]!.developerAddress }, developers[1]!);
+    const submitted = await service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: applications[1]!.developerAddress }, developers[1]!);
+    expect(submitted.bounty.submission).toMatchObject({ author: 'developer-two', changedFiles: 2, additions: 30, deletions: 4 });
+    await expect(service.getSubmissionReportEvidence(draft.id, developers[1]!)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(await service.getSubmissionReportEvidence(draft.id, owner)).toEqual({ author: 'developer-two', changedFiles: 2, additions: 30, deletions: 4 });
     await service.confirmReviewPayment(draft.id, paymentOrder.orderId, `0x${'7'.repeat(64)}`, owner);
     expect((await service.get(draft.id)).reviewPaymentStatus).toBe('PAID');
     const reviewed = await service.verify(draft.id, { confidence: 0.94, criterionResults: [{ criterionId: 'health', status: 'PASSED', evidence: ['CI passed'], summary: 'Endpoint and tests pass.' }], blockingIssues: [] });
