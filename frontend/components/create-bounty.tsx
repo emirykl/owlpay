@@ -101,6 +101,9 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
   });
 
   const selectedRepository = repositories.data?.items.find((repository) => repository.url === repositoryUrl);
+  const repositoryFullName = selectedRepository?.fullName ?? repositoryUrl.replace(/^https:\/\/github\.com\//, '').replace(/\/$/, '');
+  const repositoryOwner = selectedRepository?.ownerLogin ?? repositoryFullName.split('/')[0] ?? 'GitHub';
+  const repositoryAvatarUrl = selectedRepository?.ownerAvatarUrl ?? (repositoryOwner ? `https://github.com/${encodeURIComponent(repositoryOwner)}.png?size=128` : undefined);
   const filteredRepositories = useMemo(() => {
     const query = repositorySearch.trim().toLowerCase();
     return (repositories.data?.items ?? []).filter((repository) => !query || repository.fullName.toLowerCase().includes(query));
@@ -195,6 +198,17 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
       || reviewTokenBalance.data >= reviewUnits
     ));
   const hasEnoughBalance = hasEnoughRewardBalance && hasEnoughReviewBalance;
+  const rewardBalanceCovered = tokenBalance.data !== undefined && tokenBalance.data >= rewardUnitsNeeded;
+  const showSeparateReviewBalance = reviewPlan !== 'NONE' && !samePaymentToken;
+  const reviewBalanceCovered = Boolean(
+    reviewTokenAddress
+    && reviewTokenBalance.data !== undefined
+    && reviewTokenBalance.data >= reviewUnits
+  );
+  const visibleBalancesCovered = rewardBalanceCovered && (!showSeparateReviewBalance || reviewBalanceCovered);
+  const visibleBalancesChecking = tokenBalance.data === undefined
+    || Boolean(showSeparateReviewBalance && reviewTokenAddress && reviewTokenBalance.data === undefined);
+  const balanceSummaryState = visibleBalancesChecking ? 'checking' : visibleBalancesCovered ? 'covered' : 'attention';
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -318,15 +332,51 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
                 <>
                   <div className="stepCopy"><h3>Review & fund</h3></div>
                   <div className="reviewCard">
-                    <div className="reviewMain"><span>{repositoryUrl.replace('https://github.com/', '')}</span><h3>{title}</h3><p>{description}</p></div>
+                    <div className="reviewMain">
+                      <span className="reviewRepositoryAvatar" style={repositoryAvatarUrl ? { backgroundImage: `url(${repositoryAvatarUrl})` } : undefined}>{repositoryAvatarUrl ? '' : repositoryOwner.slice(0, 1).toUpperCase()}</span>
+                      <div className="reviewMainCopy"><span>{repositoryFullName}</span><h3>{title}</h3><p>{description}</p></div>
+                    </div>
                     <div className="reviewGrid"><div><span>Escrow reward</span><strong>{rewardAmount} otUSDC</strong></div><div><span>Review method</span><strong>{reviewPlan === 'NONE' ? 'Manual · Free' : `${reviewPlan === 'SECURITY' ? 'Security' : 'Standard'} · ${reviewPrice.toFixed(2)} ${reviewTokenSymbol} paid now`}</strong></div><div><span>Deadline</span><strong>{new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(deadline))}</strong></div></div>
                     <div className="reviewCriterion"><span><Check /></span><p><strong>Mandatory evidence</strong><small>{criterion}</small></p></div>
                   </div>
                   {!address && <div className="connectionGate walletGate providerGate"><span className="connectionProviderIcon metamaskConnectionIcon"><MetaMaskMark /></span><div><strong>Connect MetaMask to fund</strong><p>Your connected address becomes the bounty owner on GOAT Testnet3.</p></div><WalletButton /></div>}
                   {address && authConfigured && !identityLinked && <div className="connectionGate walletGate providerGate"><span className="connectionProviderIcon linkConnectionIcon"><LinkMark /></span><div><strong>Link GitHub and wallet</strong><p>Sign one verification message so OwlPay can bind this bounty to your identity.</p></div><IdentityButton /></div>}
                   {address && (!authConfigured || identityLinked) && <div className="readyNotice"><span className="statusDot" /><p><strong>Identity ready</strong><small>@{githubLogin} · {address.slice(0, 8)}…{address.slice(-6)}</small></p></div>}
-                  {address && contractsReady && <div className="connectionGate"><div><strong>Escrow token balance</strong><p>{tokenBalance.data === undefined ? 'Loading…' : `${formatUnits(tokenBalance.data, 6)} otUSDC`} · {formatUnits(rewardUnitsNeeded, 6)} needed for escrow{samePaymentToken && reviewPrice > 0 ? ' and review' : ''}.</p></div>{!hasEnoughRewardBalance && <button type="button" className="secondaryButton" onClick={() => claimMutation.mutate()} disabled={claimMutation.isPending}>{claimMutation.isPending ? 'Claiming…' : 'Claim 1,000 otUSDC'}</button>}</div>}
-                  {address && reviewPlan !== 'NONE' && reviewTokenAddress && !samePaymentToken && <div className="connectionGate"><div><strong>GOAT Flow balance</strong><p>{reviewTokenBalance.data === undefined ? 'Loading…' : `${formatUnits(reviewTokenBalance.data, reviewTokenDecimals)} ${reviewTokenSymbol}`} · {reviewPrice} {reviewTokenSymbol} needed for the review.</p></div></div>}
+                  {address && contractsReady && (
+                    <section className={`balanceSummary ${balanceSummaryState}`} aria-labelledby="balance-summary-title">
+                      <header className="balanceSummaryHeader">
+                        <div><span>Payment readiness</span><h4 id="balance-summary-title">Balances</h4></div>
+                        <span className={`balanceSummaryStatus ${balanceSummaryState}`}>
+                          {visibleBalancesChecking ? 'Checking balances' : visibleBalancesCovered ? 'All balances covered' : 'Action needed'}
+                        </span>
+                      </header>
+                      <div className="balanceSummaryRows">
+                        <div className="balanceSummaryRow">
+                          <span className={`balanceCheckBadge ${tokenBalance.data === undefined ? 'checking' : rewardBalanceCovered ? 'covered' : 'insufficient'}`} role="img" aria-label={tokenBalance.data === undefined ? 'Escrow balance is being checked' : rewardBalanceCovered ? 'Escrow balance is covered' : 'Escrow balance is insufficient'}>
+                            {rewardBalanceCovered ? <Check /> : tokenBalance.data === undefined ? '…' : '!'}
+                          </span>
+                          <div className="balanceSummaryCopy">
+                            <span>Escrow balance</span>
+                            <strong>{tokenBalance.data === undefined ? 'Loading…' : `${formatUnits(tokenBalance.data, 6)} otUSDC`}</strong>
+                            <small><b>{formatUnits(rewardUnitsNeeded, 6)} otUSDC required</b> for escrow{samePaymentToken && reviewPrice > 0 ? ' and AI review' : ''}.</small>
+                          </div>
+                          {!hasEnoughRewardBalance && <div className="balanceRowActions"><button type="button" className="secondaryButton" onClick={() => claimMutation.mutate()} disabled={claimMutation.isPending}>{claimMutation.isPending ? 'Claiming…' : 'Claim 1,000 otUSDC'}</button></div>}
+                        </div>
+                        {showSeparateReviewBalance && (
+                          <div className="balanceSummaryRow">
+                            <span className={`balanceCheckBadge ${!reviewTokenAddress ? 'insufficient' : reviewTokenBalance.data === undefined ? 'checking' : reviewBalanceCovered ? 'covered' : 'insufficient'}`} role="img" aria-label={!reviewTokenAddress ? 'AI review balance is unavailable' : reviewTokenBalance.data === undefined ? 'AI review balance is being checked' : reviewBalanceCovered ? 'AI review balance is covered' : 'AI review balance is insufficient'}>
+                              {reviewBalanceCovered ? <Check /> : reviewTokenAddress && reviewTokenBalance.data === undefined ? '…' : '!'}
+                            </span>
+                            <div className="balanceSummaryCopy">
+                              <span>AI review balance</span>
+                              <strong>{!reviewTokenAddress ? 'Unavailable' : reviewTokenBalance.data === undefined ? 'Loading…' : `${formatUnits(reviewTokenBalance.data, reviewTokenDecimals)} ${reviewTokenSymbol}`}</strong>
+                              <small><b>{reviewPrice} {reviewTokenSymbol} required</b> for the Owl Agent review.</small>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </section>
+                  )}
                   {claimMutation.error && <p className="formError" role="alert">{claimMutation.error.message}</p>}
                 </>
               )}
