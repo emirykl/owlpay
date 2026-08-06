@@ -1,6 +1,14 @@
 import { DomainError } from '../domain/errors.js';
 import type { Criterion, ReviewPlan, VerificationInput } from '../domain/schemas.js';
-import type { GitHubEvidenceProvider, ManageableRepository, PullRequestEvidence } from '../application/ports.js';
+import type {
+  GitHubEvidenceProvider,
+  ManageableRepository,
+  PullRequestCheckEvidence,
+  PullRequestEvidence,
+  PullRequestFileEvidence,
+  PullRequestReviewAgent,
+  PullRequestReviewContext
+} from '../application/ports.js';
 
 const pullRequestPattern = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)\/?$/;
 const repositoryPattern = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/?$/;
@@ -17,7 +25,10 @@ interface GitHubRepositoryPayload {
 }
 
 export class GitHubClient implements GitHubEvidenceProvider {
-  constructor(private readonly token = '') {}
+  constructor(
+    private readonly token = '',
+    private readonly reviewAgent: PullRequestReviewAgent = unavailableReviewAgent
+  ) {}
 
   async getPullRequest(url: string): Promise<PullRequestEvidence> {
     const match = pullRequestPattern.exec(url);
@@ -40,7 +51,7 @@ export class GitHubClient implements GitHubEvidenceProvider {
 
     const payload = await response.json() as {
       state: string; head: { sha: string }; changed_files: number; additions: number; deletions: number;
-      user: { id: number; login: string }; title: string;
+      user: { id: number; login: string }; title: string; body: string | null;
     };
     return {
       repositoryUrl: `https://github.com/${owner}/${repository}`,
@@ -53,11 +64,20 @@ export class GitHubClient implements GitHubEvidenceProvider {
       deletions: payload.deletions,
       authorId: payload.user.id,
       author: payload.user.login,
-      title: payload.title
+      title: payload.title,
+      body: payload.body ?? ''
     };
   }
 
-  async reviewPullRequest(url: string, criteria: Criterion[], plan: Exclude<ReviewPlan, 'NONE'>): Promise<VerificationInput> {
+  async reviewPullRequest(
+    url: string,
+    criteria: Criterion[],
+    plan: Exclude<ReviewPlan, 'NONE'>,
+    context: PullRequestReviewContext
+  ): Promise<VerificationInput> {
+    if (!this.reviewAgent.configured) {
+      throw new DomainError('Owl Agent AI review is not configured', 503, 'AI_REVIEW_NOT_CONFIGURED');
+    }
     const pullRequest = await this.getPullRequest(url);
     const match = pullRequestPattern.exec(url);
     if (!match?.[1] || !match[2] || !match[3]) throw new DomainError('Invalid GitHub pull request URL');
@@ -76,53 +96,30 @@ export class GitHubClient implements GitHubEvidenceProvider {
       })
     ]);
     if (!filesResponse.ok) throw githubError(filesResponse.status, 'Pull request files could not be loaded');
-    const files = await filesResponse.json() as Array<{ filename: string; status: string; patch?: string }>;
-    const checks = checksResponse.ok
+    const files = await filesResponse.json() as PullRequestFileEvidence[];
+    const checks: PullRequestCheckEvidence[] = checksResponse.ok
       ? (await checksResponse.json() as { check_runs: Array<{ name: string; status: string; conclusion: string | null; html_url?: string }> }).check_runs
+        .map((check) => ({
+          name: check.name,
+          status: check.status,
+          conclusion: check.conclusion,
+          ...(check.html_url ? { url: check.html_url } : {})
+        }))
       : [];
-    const failedChecks = checks.filter((check) => check.status === 'completed' && !['success', 'neutral', 'skipped'].includes(check.conclusion ?? ''));
-    const successfulChecks = checks.filter((check) => check.status === 'completed' && check.conclusion === 'success');
     const riskFindings = plan === 'SECURITY' ? scanPatches(files) : [];
-    const evidenceBase = [`commit:${pullRequest.headSha}`, `files:${files.length}`];
-
-    const criterionResults = criteria.map((criterion) => {
-      if (criterion.method === 'manual') {
-        return { criterionId: criterion.id, status: 'UNKNOWN' as const, evidence: evidenceBase, summary: 'This criterion requires maintainer review.' };
-      }
-      if (criterion.method === 'ci') {
-        if (failedChecks.length) return {
-          criterionId: criterion.id,
-          status: 'FAILED' as const,
-          evidence: failedChecks.slice(0, 10).map((check) => `check:${check.name}:${check.conclusion}`),
-          summary: `${failedChecks.length} GitHub check(s) did not pass.`
-        };
-        if (!successfulChecks.length) return {
-          criterionId: criterion.id,
-          status: 'UNKNOWN' as const,
-          evidence: evidenceBase,
-          summary: 'No successful GitHub check run was available for this commit.'
-        };
-        return {
-          criterionId: criterion.id,
-          status: 'PASSED' as const,
-          evidence: successfulChecks.slice(0, 10).map((check) => `check:${check.name}:success`),
-          summary: `${successfulChecks.length} GitHub check(s) passed.`
-        };
-      }
-      return {
-        criterionId: criterion.id,
-        status: riskFindings.length ? 'UNKNOWN' as const : 'PASSED' as const,
-        evidence: evidenceBase,
-        summary: riskFindings.length ? 'The diff needs maintainer attention due to static-analysis findings.' : 'The pull request contains reviewable changes and no blocking static pattern was found.'
-      };
+    return this.reviewAgent.review({
+      evidence: {
+        pullRequest,
+        files,
+        checks,
+        checksAvailable: checksResponse.ok,
+        diffTruncated: pullRequest.changedFiles > files.length || files.some((file) => typeof file.patch !== 'string'),
+        staticFindings: riskFindings
+      },
+      criteria,
+      plan,
+      context
     });
-
-    return {
-      commitSha: pullRequest.headSha,
-      confidence: failedChecks.length || riskFindings.length ? 0.96 : successfulChecks.length ? 0.94 : 0.72,
-      criterionResults,
-      blockingIssues: [...failedChecks.map((check) => `GitHub check failed: ${check.name}`), ...riskFindings]
-    };
   }
 
   async listManageableRepositories(providerToken: string, expectedUserId: number): Promise<ManageableRepository[]> {
@@ -188,6 +185,13 @@ function scanPatches(files: Array<{ filename: string; patch?: string }>) {
   }
   return [...findings];
 }
+
+const unavailableReviewAgent: PullRequestReviewAgent = {
+  configured: false,
+  async review() {
+    throw new DomainError('Owl Agent AI review is not configured', 503, 'AI_REVIEW_NOT_CONFIGURED');
+  }
+};
 
 function getWritePermission(permissions?: GitHubRepositoryPayload['permissions']): ManageableRepository['permission'] | null {
   if (permissions?.admin) return 'admin';

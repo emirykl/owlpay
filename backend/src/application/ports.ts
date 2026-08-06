@@ -34,6 +34,48 @@ export interface PullRequestEvidence {
   authorId: number;
   author: string;
   title: string;
+  body: string;
+}
+
+export interface PullRequestFileEvidence {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string;
+}
+
+export interface PullRequestCheckEvidence {
+  name: string;
+  status: string;
+  conclusion: string | null;
+  url?: string;
+}
+
+export interface PullRequestReviewEvidence {
+  pullRequest: PullRequestEvidence;
+  files: PullRequestFileEvidence[];
+  checks: PullRequestCheckEvidence[];
+  checksAvailable: boolean;
+  diffTruncated: boolean;
+  staticFindings: string[];
+}
+
+export interface PullRequestReviewContext {
+  bountyTitle: string;
+  bountyDescription: string;
+  safetyIdentifier: string;
+}
+
+export interface PullRequestReviewAgent {
+  readonly configured: boolean;
+  review(input: {
+    evidence: PullRequestReviewEvidence;
+    criteria: Criterion[];
+    plan: Exclude<ReviewPlan, 'NONE'>;
+    context: PullRequestReviewContext;
+  }): Promise<VerificationInput>;
 }
 
 export interface ManageableRepository {
@@ -48,7 +90,12 @@ export interface ManageableRepository {
 
 export interface GitHubEvidenceProvider {
   getPullRequest(url: string): Promise<PullRequestEvidence>;
-  reviewPullRequest(url: string, criteria: Criterion[], plan: Exclude<ReviewPlan, 'NONE'>): Promise<VerificationInput>;
+  reviewPullRequest(
+    url: string,
+    criteria: Criterion[],
+    plan: Exclude<ReviewPlan, 'NONE'>,
+    context: PullRequestReviewContext
+  ): Promise<VerificationInput>;
   listManageableRepositories(providerToken: string, expectedUserId: number): Promise<ManageableRepository[]>;
   assertCanManageRepository(repositoryUrl: string, providerToken: string, expectedUserId: number): Promise<ManageableRepository>;
 }
