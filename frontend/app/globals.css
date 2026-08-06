@@ -410,7 +410,15 @@ a { color: inherit; text-decoration: none; }
 .maintainerReview > div:last-child { display: flex; gap: 8px; flex: 0 0 auto; }
 
 /* Bounty wizard */
-.bountyWizard { width: min(760px,100%); padding: 0; overflow: hidden; }
+.bountyWizard {
+  width: min(760px,100%);
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
 .wizardHeader { margin: 0; padding: 28px 30px 22px; }
 .wizardProgress { min-height: 76px; padding: 0 30px 20px; display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; border-bottom: 1px solid var(--line); }
 .wizardProgress > div { position: relative; display: flex; align-items: center; gap: 8px; color: #a4a69f; }
@@ -435,6 +443,7 @@ a { color: inherit; text-decoration: none; }
 .wizardField select { min-height: 48px; }
 .wizardField textarea { resize: vertical; }
 .wizardField input:focus,.wizardField textarea:focus,.wizardField select:focus { border-color: #8d8f86; box-shadow: 0 0 0 4px rgba(18,19,15,.05); }
+.fieldValidation { margin-top: -2px; color: #9d3131; font-size: 10px; font-weight: 650; line-height: 1.4; }
 .connectionGate { min-height: 110px; padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: white; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .connectionGate div { display: grid; gap: 7px; }
 .connectionGate strong { font-size: 13px; }

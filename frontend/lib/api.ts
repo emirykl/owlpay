@@ -113,6 +113,18 @@ export interface ReviewPaymentRequirement {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
+interface ApiErrorBody {
+  message?: string;
+  issues?: Array<{ path?: Array<string | number>; message?: string }>;
+}
+
+export function formatApiError(body: ApiErrorBody, status: number) {
+  const issue = body.issues?.find((item) => item.message);
+  if (!issue?.message) return body.message ?? `Request failed (${status})`;
+  const field = issue.path?.length ? `${issue.path.join('.')}: ` : '';
+  return `${field}${issue.message}`;
+}
+
 async function api<T>(path: string, init?: RequestInit, githubAccess = false): Promise<T> {
   const headers = await authenticatedHeaders(githubAccess);
   const response = await fetch(`${API_URL}${path}`, {
@@ -120,8 +132,8 @@ async function api<T>(path: string, init?: RequestInit, githubAccess = false): P
     headers: { ...headers, ...init?.headers }
   });
   if (!response.ok) {
-    const body = await response.json().catch(() => ({ message: 'Request failed' })) as { message?: string };
-    throw new Error(body.message ?? `Request failed (${response.status})`);
+    const body = await response.json().catch(() => ({ message: 'Request failed' })) as ApiErrorBody;
+    throw new Error(formatApiError(body, response.status));
   }
   return response.json() as Promise<T>;
 }
