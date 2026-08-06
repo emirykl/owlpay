@@ -117,10 +117,12 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
     },
     onSuccess: async (result) => {
       setSuccess(bounty.reviewPlan === 'NONE'
-        ? `Commit ${result.evidence.headSha.slice(0, 8)} submitted. It is ready for the maintainer's manual review.`
+        ? `Commit ${result.evidence.headSha.slice(0, 8)} submitted. The maintainer will review the pull request manually.`
         : bounty.reviewPaymentStatus === 'PAID'
-        ? `Commit ${result.evidence.headSha.slice(0, 8)} submitted. Owl Agent review started automatically.`
-        : `Commit ${result.evidence.headSha.slice(0, 8)} submitted. The maintainer must purchase the review package.`);
+        ? bounty.reviewPlan === 'SECURITY'
+          ? `Commit ${result.evidence.headSha.slice(0, 8)} submitted. The ${securityPrice} ${reviewTokenSymbol} Owl Security AI review performs deeper code and security analysis before the maintainer makes the final decision.`
+          : `Commit ${result.evidence.headSha.slice(0, 8)} submitted. The ${standardPrice} ${reviewTokenSymbol} Owl AI review analyzes the pull request before the maintainer makes the final decision.`
+        : `Commit ${result.evidence.headSha.slice(0, 8)} submitted. The maintainer must activate a review package before AI analysis can run.`);
       queryClient.setQueryData(['bounty', bounty.id], result.bounty);
       await queryClient.invalidateQueries({ queryKey: ['bounties'] });
     }
