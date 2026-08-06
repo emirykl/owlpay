@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BountyService } from '../src/application/bounty-service.js';
 import { VerificationPolicy } from '../src/application/verification-policy.js';
 import type { AuthUser } from '../src/application/auth.js';
-import type { GitHubEvidenceProvider, SettlementGateway } from '../src/application/ports.js';
+import type { GitHubEvidenceProvider, ReviewPaymentGateway, ReviewPaymentVerifier, SettlementGateway } from '../src/application/ports.js';
 import { InMemoryApplicationRepository } from '../src/infrastructure/in-memory-application-repository.js';
 import { InMemoryBountyRepository } from '../src/infrastructure/in-memory-bounty-repository.js';
 
@@ -32,21 +32,104 @@ const settlement: SettlementGateway = {
   async requestRevision() { return `0x${'8'.repeat(64)}`; }
 };
 
+const paymentToken = '0x0000000000000000000000000000000000000010' as const;
+const paymentReceiver = '0x0000000000000000000000000000000000000011' as const;
+
+function createPaymentHarness(verifiedAmounts: bigint[] = []) {
+  let sequence = 0;
+  let lastVerifiedTxHash = `0x${'0'.repeat(64)}`;
+  const orders = new Map<string, {
+    dappOrderId: string;
+    payer: `0x${string}`;
+    amountWei: string;
+  }>();
+  const gateway: ReviewPaymentGateway = {
+    configured: true,
+    async createOrder(input) {
+      const orderId = `flow-order-${++sequence}`;
+      orders.set(orderId, input);
+      return {
+        orderId,
+        flow: 'ERC20_DIRECT',
+        tokenSymbol: 'USDC',
+        tokenContract: paymentToken,
+        fromAddress: input.payer,
+        payToAddress: paymentReceiver,
+        chainId: 48816,
+        amountWei: input.amountWei,
+        expiresAt: Math.floor(Date.now() / 1_000) + 900,
+        x402: { x402Version: 2, order_id: orderId }
+      };
+    },
+    async getOrderStatus(orderId) { return confirmedStatus(orderId); },
+    async waitForConfirmation(orderId) { return confirmedStatus(orderId); },
+    async getOrderProof(orderId) {
+      const order = requireOrder(orderId);
+      return {
+        payload: {
+          order_id: orderId,
+          tx_hash: lastVerifiedTxHash,
+          log_index: 0,
+          from_addr: order.payer,
+          to_addr: paymentReceiver,
+          amount_wei: order.amountWei,
+          from_chain_id: 48816,
+          status: 'PAYMENT_CONFIRMED'
+        },
+        signature: 'test-proof-hash'
+      };
+    }
+  };
+  const verifier: ReviewPaymentVerifier = {
+    async verify(input) {
+      lastVerifiedTxHash = input.txHash;
+      verifiedAmounts.push(input.amount);
+    }
+  };
+  return { gateway, verifier };
+
+  function requireOrder(orderId: string) {
+    const order = orders.get(orderId);
+    if (!order) throw new Error(`Unknown test order ${orderId}`);
+    return order;
+  }
+
+  function confirmedStatus(orderId: string) {
+    const order = requireOrder(orderId);
+    return {
+      orderId,
+      dappOrderId: order.dappOrderId,
+      status: 'PAYMENT_CONFIRMED' as const,
+      chainId: 48816,
+      tokenContract: paymentToken,
+      tokenSymbol: 'USDC',
+      fromAddress: order.payer,
+      amountWei: order.amountWei,
+      txHash: lastVerifiedTxHash,
+      confirmedAt: new Date().toISOString()
+    };
+  }
+}
+
+const reviewConfig = {
+  paymentToken,
+  tokenDecimals: 6,
+  standardPrice: '2',
+  securityPrice: '5'
+};
+
 describe('bounty application and assignment flow', () => {
   it('allows a free manual bounty to be approved without an agent payment or report', async () => {
+    const payment = createPaymentHarness();
     const service = new BountyService(
       new InMemoryBountyRepository(),
       new InMemoryApplicationRepository(),
       github,
       new VerificationPolicy(),
       settlement,
-      { async verify() { throw new Error('Manual review must not verify a payment'); } },
-      {
-        paymentToken: '0x0000000000000000000000000000000000000010',
-        treasury: '0x0000000000000000000000000000000000000011',
-        standardPrice: '2',
-        securityPrice: '5'
-      }
+      payment.gateway,
+      payment.verifier,
+      reviewConfig
     );
     const draft = await service.create({
       title: 'Manually review this pull request',
@@ -60,8 +143,8 @@ describe('bounty application and assignment flow', () => {
     }, owner, 'github-token');
 
     expect(draft).toMatchObject({ reviewPlan: 'NONE', reviewPrice: '0', reviewPaymentStatus: 'NOT_REQUIRED' });
-    const optionalStandard = await service.getReviewPaymentRequirement(draft.id, owner, 'STANDARD');
-    expect(optionalStandard.accepts[0]?.amount).toBe('2000000');
+    const optionalStandard = await service.createReviewPaymentOrder(draft.id, owner, 'STANDARD');
+    expect(optionalStandard.amountWei).toBe('2000000');
     await service.markFunded(draft.id, '7', `0x${'1'.repeat(64)}`, owner.id);
     const application = await service.apply(draft.id, {
       message: 'I can complete this work and provide a focused pull request.',
@@ -80,16 +163,18 @@ describe('bounty application and assignment flow', () => {
 
   it('upgrades a paid Standard review to Security by charging only the difference', async () => {
     const verifiedAmounts: bigint[] = [];
+    const payment = createPaymentHarness(verifiedAmounts);
     const service = new BountyService(
       new InMemoryBountyRepository(),
       new InMemoryApplicationRepository(),
       github,
       new VerificationPolicy(),
       settlement,
-      { async verify(input) { verifiedAmounts.push(input.amount); } },
+      payment.gateway,
+      payment.verifier,
       {
         paymentToken: '0x0000000000000000000000000000000000000010',
-        treasury: '0x0000000000000000000000000000000000000011',
+        tokenDecimals: 6,
         standardPrice: '1',
         securityPrice: '2'
       }
@@ -105,30 +190,29 @@ describe('bounty application and assignment flow', () => {
       criteria: [{ id: 'upgrade', description: 'Review upgrade is recorded', mandatory: true, method: 'ci' }]
     }, owner, 'github-token');
 
-    expect((await service.getReviewPaymentRequirement(draft.id, owner, 'STANDARD')).accepts[0]?.amount).toBe('1000000');
-    const silver = await service.confirmReviewPayment(draft.id, `0x${'6'.repeat(64)}`, owner, 'STANDARD');
+    const silverOrder = await service.createReviewPaymentOrder(draft.id, owner, 'STANDARD');
+    expect(silverOrder.amountWei).toBe('1000000');
+    const silver = await service.confirmReviewPayment(draft.id, silverOrder.orderId, `0x${'6'.repeat(64)}`, owner);
     expect(silver).toMatchObject({ reviewPlan: 'STANDARD', reviewPaidAmount: '1', reviewPaymentStatus: 'PAID' });
-    expect((await service.getReviewPaymentRequirement(draft.id, owner, 'SECURITY')).accepts[0]?.amount).toBe('1000000');
-    const gold = await service.confirmReviewPayment(draft.id, `0x${'7'.repeat(64)}`, owner, 'SECURITY');
+    const goldOrder = await service.createReviewPaymentOrder(draft.id, owner, 'SECURITY');
+    expect(goldOrder.amountWei).toBe('1000000');
+    const gold = await service.confirmReviewPayment(draft.id, goldOrder.orderId, `0x${'7'.repeat(64)}`, owner);
     expect(gold).toMatchObject({ reviewPlan: 'SECURITY', reviewPaidAmount: '2', reviewPaymentStatus: 'PAID' });
     expect(gold.reviewPaymentTxHashes).toEqual([`0x${'6'.repeat(64)}`, `0x${'7'.repeat(64)}`]);
     expect(verifiedAmounts).toEqual([1_000_000n, 1_000_000n]);
   });
 
   it('rejects applications after the bounty deadline', async () => {
+    const payment = createPaymentHarness();
     const service = new BountyService(
       new InMemoryBountyRepository(),
       new InMemoryApplicationRepository(),
       github,
       new VerificationPolicy(),
       settlement,
-      { async verify() {} },
-      {
-        paymentToken: '0x0000000000000000000000000000000000000010',
-        treasury: '0x0000000000000000000000000000000000000011',
-        standardPrice: '2',
-        securityPrice: '5'
-      }
+      payment.gateway,
+      payment.verifier,
+      reviewConfig
     );
     const draft = await service.create({
       title: 'Short deadline bounty',
@@ -149,19 +233,16 @@ describe('bounty application and assignment flow', () => {
   });
 
   it('accepts multiple applications, assigns one developer, verifies work, and releases payment after maintainer approval', async () => {
+    const payment = createPaymentHarness();
     const service = new BountyService(
       new InMemoryBountyRepository(),
       new InMemoryApplicationRepository(),
       github,
       new VerificationPolicy(),
       settlement,
-      { async verify() {} },
-      {
-        paymentToken: '0x0000000000000000000000000000000000000010',
-        treasury: '0x0000000000000000000000000000000000000011',
-        standardPrice: '2',
-        securityPrice: '5'
-      }
+      payment.gateway,
+      payment.verifier,
+      reviewConfig
     );
     const draft = await service.create({
       title: 'Add a health endpoint',
@@ -174,10 +255,9 @@ describe('bounty application and assignment flow', () => {
       criteria: [{ id: 'health', description: 'GET /health returns HTTP 200', mandatory: true, method: 'ci' }]
     }, owner, 'github-token');
     await service.markFunded(draft.id, '1', `0x${'1'.repeat(64)}`, owner.id);
-    const paymentRequirement = await service.getReviewPaymentRequirement(draft.id, owner);
-    expect(paymentRequirement).toMatchObject({
-      x402Version: 2,
-      accepts: [{ network: 'eip155:48816', amount: '2000000', payTo: '0x0000000000000000000000000000000000000011' }]
+    const paymentOrder = await service.createReviewPaymentOrder(draft.id, owner);
+    expect(paymentOrder).toMatchObject({
+      flow: 'ERC20_DIRECT', chainId: 48816, amountWei: '2000000', payToAddress: paymentReceiver
     });
 
     const applications = await Promise.all(developers.map((developer, index) => service.apply(draft.id, {
@@ -192,7 +272,7 @@ describe('bounty application and assignment flow', () => {
     await expect(service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: applications[0]!.developerAddress }, developers[0]!)).rejects.toMatchObject({ code: 'DEVELOPER_NOT_ASSIGNED' });
 
     await service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: applications[1]!.developerAddress }, developers[1]!);
-    await service.confirmReviewPayment(draft.id, `0x${'7'.repeat(64)}`, owner);
+    await service.confirmReviewPayment(draft.id, paymentOrder.orderId, `0x${'7'.repeat(64)}`, owner);
     expect((await service.get(draft.id)).reviewPaymentStatus).toBe('PAID');
     const reviewed = await service.verify(draft.id, { confidence: 0.94, criterionResults: [{ criterionId: 'health', status: 'PASSED', evidence: ['CI passed'], summary: 'Endpoint and tests pass.' }], blockingIssues: [] });
     expect(reviewed).toMatchObject({ status: 'READY_FOR_REVIEW', decision: { decision: 'APPROVE' } });

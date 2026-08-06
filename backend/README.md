@@ -58,4 +58,8 @@ Official GOAT Testnet3 deployments currently include tUSDC at `0xFCA5846c86dC8Df
 
 ## Review payment / x402 boundary
 
-`POST /api/bounties/:id/review-payment` currently provides an x402-shaped MVP adapter: it returns HTTP 402 plus a machine-readable `PAYMENT-REQUIRED` header, then verifies the owner's exact onchain token transfer, receipt, sender, receiver, amount, and replay protection before issuing one review credit. It is not yet the complete hosted GOAT x402 merchant flow because it does not create a merchant order or persist the facilitator settlement proof. The domain boundary is intentionally isolated so the adapter can be replaced with the official DIRECT merchant integration without changing the bounty workflow.
+`POST /api/bounties/:id/review-payment` creates an authenticated GOAT Flow DIRECT merchant order and returns HTTP 402 with the facilitator's machine-readable `PAYMENT-REQUIRED` payload. The browser pays that exact order through `goatflow-sdk` and confirms it with the returned order ID and transaction hash.
+
+The backend grants a review credit only after all three checks agree: GOAT Flow reports `PAYMENT_CONFIRMED` or `INVOICED`, the persisted facilitator proof matches the original order, and the GOAT Testnet3 receipt contains the exact payer/token/receiver/amount transfer. Order IDs and transaction hashes are replay-protected and persisted through migration `0007_goat_flow_review_orders.sql`.
+
+Merchant credentials (`GOAT_FLOW_API_KEY` and `GOAT_FLOW_API_SECRET`) stay in the backend environment. Set `GOAT_FLOW_TOKEN_SYMBOL`, `GOAT_FLOW_TOKEN_ADDRESS`, and `GOAT_FLOW_TOKEN_DECIMALS` to the token configured for the merchant. This review token is intentionally separate from `PAYMENT_TOKEN_ADDRESS`, which remains the bounty escrow token.

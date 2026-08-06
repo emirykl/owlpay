@@ -23,6 +23,10 @@ export interface Bounty {
   reviewPaymentStatus: 'NOT_REQUIRED' | 'REQUIRED' | 'PAID' | 'CONSUMED';
   reviewPaymentTxHash?: string;
   reviewPaymentTxHashes: string[];
+  reviewPaymentOrderId?: string;
+  reviewPaymentOrderIds?: string[];
+  reviewPaymentOrderStatus?: FlowOrderStatus;
+  reviewPaymentPendingTxHash?: string;
   reviewPaidAt?: string;
   reviewConsumedAt?: string;
   deadline: string;
@@ -74,6 +78,7 @@ export interface NetworkInfo {
   writesEnabled: boolean;
   contractAddress: string | null;
   paymentTokenAddress: string | null;
+  reviewPaymentToken: { address: string | null; symbol: string; decimals: number };
   platformFeeBps: number;
   reviewPrices: { standard: string; security: string };
   status: { connected: boolean; blockNumber: string | null };
@@ -98,22 +103,21 @@ export type CreateBountyPayload = Pick<Bounty,
   'title' | 'description' | 'repositoryUrl' | 'ownerAddress' | 'rewardAmount' | 'reviewPlan' | 'deadline' | 'criteria'
 >;
 
-export interface ReviewPaymentRequirement {
-  x402Version: 2;
+export type FlowOrderStatus = 'CHECKOUT_VERIFIED' | 'PAYMENT_CONFIRMED' | 'INVOICED' | 'FAILED' | 'EXPIRED' | 'CANCELLED';
+
+export interface ReviewPaymentOrder {
   orderId: string;
-  targetPlan: 'STANDARD' | 'SECURITY';
-  currentPaidAmount: string;
-  paymentAmount: string;
-  resource: { url: string; description: string; mimeType: string };
-  accepts: Array<{
-    scheme: 'exact';
-    network: 'eip155:48816';
-    amount: string;
-    asset: `0x${string}`;
-    payTo: `0x${string}`;
-    maxTimeoutSeconds: number;
-    extra: { name: string; version: string; decimals: number };
-  }>;
+  flow: 'ERC20_DIRECT' | 'ERC20_3009' | 'ERC20_APPROVE_XFER';
+  tokenSymbol: string;
+  tokenContract: string;
+  fromAddress: string;
+  payToAddress: string;
+  chainId: number;
+  amountWei: string;
+  expiresAt: number;
+  calldataSignRequest?: Record<string, unknown>;
+  x402?: Record<string, unknown>;
+  clientTxHash?: string;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -196,12 +200,12 @@ export const owlpayApi = {
     const response = await fetch(`${API_URL}/api/bounties/${id}/review-payment`, {
       method: 'POST', headers: await authenticatedHeaders(), body: JSON.stringify({ targetPlan })
     });
-    const body = await response.json().catch(() => ({ message: 'Payment requirement could not be loaded' })) as ReviewPaymentRequirement & { message?: string };
+    const body = await response.json().catch(() => ({ message: 'Payment order could not be created' })) as ReviewPaymentOrder & { message?: string };
     if (response.status !== 402) throw new Error(body.message ?? `Request failed (${response.status})`);
     return body;
   },
-  confirmReviewPayment: (id: string, txHash: string, targetPlan?: 'STANDARD' | 'SECURITY') => api<Bounty>(`/api/bounties/${id}/review-payment/confirm`, {
-    method: 'POST', body: JSON.stringify({ txHash, targetPlan })
+  confirmReviewPayment: (id: string, orderId: string, txHash: string) => api<Bounty>(`/api/bounties/${id}/review-payment/confirm`, {
+    method: 'POST', body: JSON.stringify({ orderId, txHash })
   }),
   runReview: (id: string) => api<Bounty>(`/api/bounties/${id}/review/run`, { method: 'POST' }),
   approveBounty: (id: string) => api<Bounty>(`/api/bounties/${id}/approve`, { method: 'POST' }),

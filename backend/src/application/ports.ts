@@ -1,4 +1,4 @@
-import type { Bounty, BountyApplication, Criterion, ReviewPlan, VerificationInput } from '../domain/schemas.js';
+import type { Bounty, BountyApplication, BrowserReviewPaymentOrder, Criterion, ReviewPlan, VerificationInput } from '../domain/schemas.js';
 
 export interface BountyRepository {
   list(): Promise<Bounty[]>;
@@ -51,6 +51,54 @@ export interface GitHubEvidenceProvider {
   reviewPullRequest(url: string, criteria: Criterion[], plan: Exclude<ReviewPlan, 'NONE'>): Promise<VerificationInput>;
   listManageableRepositories(providerToken: string, expectedUserId: number): Promise<ManageableRepository[]>;
   assertCanManageRepository(repositoryUrl: string, providerToken: string, expectedUserId: number): Promise<ManageableRepository>;
+}
+
+export type FlowOrderStatus = 'CHECKOUT_VERIFIED' | 'PAYMENT_CONFIRMED' | 'INVOICED' | 'FAILED' | 'EXPIRED' | 'CANCELLED';
+
+export interface ReviewPaymentGateway {
+  readonly configured: boolean;
+  createOrder(input: {
+    dappOrderId: string;
+    payer: `0x${string}`;
+    amountWei: string;
+  }): Promise<BrowserReviewPaymentOrder>;
+  getOrderStatus(orderId: string): Promise<{
+    orderId: string;
+    dappOrderId: string;
+    status: FlowOrderStatus;
+    chainId: number;
+    tokenContract: string;
+    tokenSymbol: string;
+    fromAddress: string;
+    amountWei: string;
+    txHash?: string;
+    confirmedAt?: string;
+  }>;
+  waitForConfirmation(orderId: string): Promise<{
+    orderId: string;
+    dappOrderId: string;
+    status: FlowOrderStatus;
+    chainId: number;
+    tokenContract: string;
+    tokenSymbol: string;
+    fromAddress: string;
+    amountWei: string;
+    txHash?: string;
+    confirmedAt?: string;
+  }>;
+  getOrderProof(orderId: string): Promise<{
+    payload: {
+      order_id: string;
+      tx_hash: string;
+      log_index: number;
+      from_addr: string;
+      to_addr: string;
+      amount_wei: string;
+      from_chain_id: number;
+      status: string;
+    };
+    signature: string;
+  }>;
 }
 
 export interface ReviewPaymentVerifier {

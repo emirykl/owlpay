@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { parseUnits } from 'viem';
 import { DomainError } from '../domain/errors.js';
-import type { Bounty, BountyApplication, CreateApplicationInput, CreateBountyInput, ReviewPlan, SubmitWorkInput, VerificationInput } from '../domain/schemas.js';
-import type { ApplicationRepository, BountyRepository, GitHubEvidenceProvider, PullRequestEvidence, ReviewPaymentVerifier, SettlementGateway } from './ports.js';
+import type { Bounty, BountyApplication, BrowserReviewPaymentOrder, CreateApplicationInput, CreateBountyInput, ReviewPlan, SubmitWorkInput, VerificationInput } from '../domain/schemas.js';
+import type { ApplicationRepository, BountyRepository, GitHubEvidenceProvider, PullRequestEvidence, ReviewPaymentGateway, ReviewPaymentVerifier, SettlementGateway } from './ports.js';
 import type { VerificationPolicy } from './verification-policy.js';
 import type { AuthUser } from './auth.js';
 
@@ -13,6 +13,7 @@ export class BountyService {
     private readonly github: GitHubEvidenceProvider,
     private readonly policy: VerificationPolicy,
     private readonly settlement: SettlementGateway = noopSettlementGateway,
+    private readonly reviewPaymentGateway: ReviewPaymentGateway = unavailableReviewPaymentGateway,
     private readonly reviewPayments: ReviewPaymentVerifier = unavailableReviewPaymentVerifier,
     private readonly reviewConfig: ReviewConfig = defaultReviewConfig
   ) {}
@@ -56,64 +57,114 @@ export class BountyService {
           : this.reviewConfig.standardPrice,
       reviewPaidAmount: '0',
       reviewPaymentStatus: input.reviewPlan === 'NONE' ? 'NOT_REQUIRED' : 'REQUIRED',
-      reviewPaymentTxHashes: []
+      reviewPaymentTxHashes: [],
+      reviewPaymentOrderIds: []
     };
     await this.repository.save(bounty);
     return bounty;
   }
 
-  async getReviewPaymentRequirement(id: string, actor: AuthUser, requestedPlan?: ReviewPlan) {
+  async createReviewPaymentOrder(id: string, actor: AuthUser, requestedPlan?: ReviewPlan) {
     const bounty = await this.get(id);
     this.assertOwner(bounty, actor.id);
     const targetPlan = requirePaidReviewPlan(requestedPlan ?? bounty.reviewPlan);
-    if (!this.reviewConfig.paymentToken || !this.reviewConfig.treasury) {
+    if (!this.reviewConfig.paymentToken || !this.reviewPaymentGateway.configured) {
       throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED');
     }
     const payment = this.calculateReviewUpgrade(bounty, targetPlan);
-    return {
-      x402Version: 2,
-      orderId: `${bounty.id}:${targetPlan}`,
-      targetPlan,
-      currentPaidAmount: bounty.reviewPaidAmount,
-      paymentAmount: payment.amount,
-      resource: {
-        url: `/api/bounties/${bounty.id}/review-payment`,
-        description: `${targetPlan === 'SECURITY' ? 'Security' : 'Standard'} Owl Agent review for ${bounty.title}`,
-        mimeType: 'application/json'
-      },
-      accepts: [{
-        scheme: 'exact',
-        network: 'eip155:48816',
-        amount: parseUnits(payment.amount, 6).toString(),
-        asset: this.reviewConfig.paymentToken,
-        payTo: this.reviewConfig.treasury,
-        maxTimeoutSeconds: 900,
-        extra: { name: 'OwlPay Test USDC', version: '1', decimals: 6 }
-      }]
+    const amountWei = parseUnits(payment.amount, this.reviewConfig.tokenDecimals).toString();
+    const payer = bounty.ownerAddress.toLowerCase();
+    const existingOrder = bounty.reviewPaymentOrder;
+    const reusableOrder = existingOrder
+      && bounty.reviewPaymentOrderId === existingOrder.orderId
+      && bounty.reviewPaymentTargetPlan === targetPlan
+      && bounty.reviewPaymentPayerAddress?.toLowerCase() === payer
+      && existingOrder.amountWei === amountWei
+      && existingOrder.expiresAt * 1_000 > Date.now()
+      && !['FAILED', 'EXPIRED', 'CANCELLED'].includes(bounty.reviewPaymentOrderStatus ?? 'CHECKOUT_VERIFIED');
+    if (reusableOrder) {
+      const status = await this.reviewPaymentGateway.getOrderStatus(existingOrder.orderId);
+      this.assertConfirmedOrder(status, bounty);
+      if (!['FAILED', 'EXPIRED', 'CANCELLED'].includes(status.status)) {
+        const clientTxHash = status.txHash ?? bounty.reviewPaymentPendingTxHash;
+        const refreshed: Bounty = { ...bounty, reviewPaymentOrderStatus: status.status };
+        if (clientTxHash) refreshed.reviewPaymentPendingTxHash = clientTxHash;
+        await this.repository.save(refreshed);
+        return { ...existingOrder, ...(clientTxHash ? { clientTxHash } : {}) };
+      }
+    }
+
+    const intentId = randomUUID();
+    const pending: Bounty = {
+      ...bounty,
+      reviewPaymentIntentId: intentId,
+      reviewPaymentTargetPlan: targetPlan,
+      reviewPaymentPayerAddress: payer,
+      reviewPaymentOrderStatus: 'CHECKOUT_VERIFIED'
     };
+    delete pending.reviewPaymentOrderId;
+    delete pending.reviewPaymentOrder;
+    delete pending.reviewPaymentProof;
+    delete pending.reviewPaymentPendingTxHash;
+    await this.repository.save(pending);
+
+    const order = await this.reviewPaymentGateway.createOrder({
+      dappOrderId: intentId,
+      payer: bounty.ownerAddress as `0x${string}`,
+      amountWei
+    });
+    this.assertCreatedOrder(order, bounty.ownerAddress, amountWei);
+    const updated: Bounty = {
+      ...pending,
+      reviewPaymentOrderId: order.orderId,
+      reviewPaymentOrderIds: uniqueValues([...bounty.reviewPaymentOrderIds, order.orderId]),
+      reviewPaymentOrder: order
+    };
+    await this.repository.save(updated);
+    return order;
   }
 
-  async confirmReviewPayment(id: string, txHash: `0x${string}`, actor: AuthUser, requestedPlan?: ReviewPlan) {
+  async confirmReviewPayment(id: string, orderId: string, txHash: `0x${string}`, actor: AuthUser) {
     const bounty = await this.get(id);
     this.assertOwner(bounty, actor.id);
-    const targetPlan = requirePaidReviewPlan(requestedPlan ?? bounty.reviewPlan);
+    if (bounty.reviewPaymentOrderId !== orderId || !bounty.reviewPaymentOrder || !bounty.reviewPaymentIntentId || !bounty.reviewPaymentTargetPlan) {
+      throw new DomainError('This GOAT Flow order is not the active review payment', 409, 'PAYMENT_ORDER_MISMATCH');
+    }
     if (bounty.reviewPaymentTxHashes.some((hash) => hash.toLowerCase() === txHash.toLowerCase())) return bounty;
-    if (actor.id !== bounty.ownerUserId || !this.reviewConfig.paymentToken || !this.reviewConfig.treasury) {
+    if (!this.reviewConfig.paymentToken || !this.reviewPaymentGateway.configured) {
       throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED');
     }
+    const targetPlan = bounty.reviewPaymentTargetPlan;
     const payment = this.calculateReviewUpgrade(bounty, targetPlan);
+    const expectedAmount = parseUnits(payment.amount, this.reviewConfig.tokenDecimals);
+    if (bounty.reviewPaymentOrder.amountWei !== expectedAmount.toString()) {
+      throw new DomainError('The review price changed after this order was created', 409, 'PAYMENT_AMOUNT_CHANGED');
+    }
     const reused = (await this.repository.list()).some((item) =>
       item.reviewPaymentTxHash?.toLowerCase() === txHash.toLowerCase()
       || item.reviewPaymentTxHashes.some((hash) => hash.toLowerCase() === txHash.toLowerCase())
+      || (item.id !== bounty.id && item.reviewPaymentOrderIds.includes(orderId))
     );
     if (reused) throw new DomainError('This transaction has already purchased a review', 409, 'PAYMENT_ALREADY_USED');
     await this.reviewPayments.verify({
       txHash,
       payer: bounty.ownerAddress as `0x${string}`,
-      token: this.reviewConfig.paymentToken,
-      payTo: this.reviewConfig.treasury,
-      amount: parseUnits(payment.amount, 6)
+      token: bounty.reviewPaymentOrder.tokenContract as `0x${string}`,
+      payTo: bounty.reviewPaymentOrder.payToAddress as `0x${string}`,
+      amount: expectedAmount
     });
+    if (bounty.reviewPaymentPendingTxHash?.toLowerCase() !== txHash.toLowerCase()) {
+      await this.repository.save({ ...bounty, reviewPaymentPendingTxHash: txHash });
+    }
+
+    const status = await this.reviewPaymentGateway.waitForConfirmation(orderId);
+    this.assertConfirmedOrder(status, bounty, txHash);
+    if (!['PAYMENT_CONFIRMED', 'INVOICED'].includes(status.status)) {
+      await this.repository.save({ ...bounty, reviewPaymentPendingTxHash: txHash, reviewPaymentOrderStatus: status.status });
+      throw new DomainError(`GOAT Flow payment ended with status ${status.status}`, 409, 'PAYMENT_NOT_CONFIRMED');
+    }
+    const proof = await this.reviewPaymentGateway.getOrderProof(orderId);
+    this.assertPaymentProof(proof, bounty, txHash, expectedAmount.toString());
     const updated: Bounty = {
       ...bounty,
       reviewPlan: targetPlan,
@@ -122,8 +173,11 @@ export class BountyService {
       reviewPaymentStatus: 'PAID',
       reviewPaymentTxHash: txHash,
       reviewPaymentTxHashes: [...bounty.reviewPaymentTxHashes, txHash],
+      reviewPaymentOrderStatus: status.status,
+      reviewPaymentProof: proof as unknown as Record<string, unknown>,
       reviewPaidAt: new Date().toISOString()
     };
+    delete updated.reviewPaymentPendingTxHash;
     await this.repository.save(updated);
     return updated;
   }
@@ -312,6 +366,56 @@ export class BountyService {
     return updated;
   }
 
+  private assertCreatedOrder(order: BrowserReviewPaymentOrder, payer: string, amountWei: string) {
+    if (!order.orderId || order.flow !== 'ERC20_DIRECT') {
+      throw new DomainError('GOAT Flow returned an unsupported payment order', 502, 'INVALID_GOAT_FLOW_ORDER');
+    }
+    if (order.chainId !== 48816
+      || order.fromAddress.toLowerCase() !== payer.toLowerCase()
+      || order.tokenContract.toLowerCase() !== this.reviewConfig.paymentToken.toLowerCase()
+      || order.amountWei !== amountWei
+      || order.expiresAt * 1_000 <= Date.now()
+      || !/^0x[a-fA-F0-9]{40}$/.test(order.payToAddress)) {
+      throw new DomainError('GOAT Flow returned payment terms that do not match the requested review', 502, 'INVALID_GOAT_FLOW_ORDER');
+    }
+  }
+
+  private assertConfirmedOrder(
+    status: Awaited<ReturnType<ReviewPaymentGateway['getOrderStatus']>>,
+    bounty: Bounty,
+    txHash?: `0x${string}`
+  ) {
+    const order = bounty.reviewPaymentOrder!;
+    if (status.orderId !== order.orderId
+      || status.dappOrderId !== bounty.reviewPaymentIntentId
+      || status.chainId !== order.chainId
+      || status.fromAddress.toLowerCase() !== order.fromAddress.toLowerCase()
+      || status.tokenContract.toLowerCase() !== order.tokenContract.toLowerCase()
+      || status.amountWei !== order.amountWei
+      || (txHash && status.txHash && status.txHash.toLowerCase() !== txHash.toLowerCase())) {
+      throw new DomainError('GOAT Flow order confirmation does not match the original payment terms', 409, 'PAYMENT_ORDER_MISMATCH');
+    }
+  }
+
+  private assertPaymentProof(
+    proof: Awaited<ReturnType<ReviewPaymentGateway['getOrderProof']>>,
+    bounty: Bounty,
+    txHash: `0x${string}`,
+    amountWei: string
+  ) {
+    const order = bounty.reviewPaymentOrder!;
+    const payload = proof.payload;
+    if (payload.order_id !== order.orderId
+      || payload.tx_hash.toLowerCase() !== txHash.toLowerCase()
+      || payload.from_addr.toLowerCase() !== order.fromAddress.toLowerCase()
+      || payload.to_addr.toLowerCase() !== order.payToAddress.toLowerCase()
+      || payload.amount_wei !== amountWei
+      || payload.from_chain_id !== order.chainId
+      || !['PAYMENT_CONFIRMED', 'INVOICED'].includes(payload.status)) {
+      throw new DomainError('GOAT Flow payment proof does not match the original order', 409, 'PAYMENT_PROOF_MISMATCH');
+    }
+  }
+
   private assertOwner(bounty: Bounty, actorUserId: string) {
     if (!bounty.ownerUserId || bounty.ownerUserId !== actorUserId) throw new DomainError('Only the bounty owner can perform this action', 403, 'FORBIDDEN');
   }
@@ -321,15 +425,15 @@ export class BountyService {
       throw new DomainError('The purchased review has already been used', 409, 'REVIEW_ALREADY_CONSUMED');
     }
     const targetPrice = targetPlan === 'SECURITY' ? this.reviewConfig.securityPrice : this.reviewConfig.standardPrice;
-    const targetUnits = parseUnits(targetPrice, 6);
-    const paidUnits = parseUnits(bounty.reviewPaidAmount || '0', 6);
+    const targetUnits = parseUnits(targetPrice, this.reviewConfig.tokenDecimals);
+    const paidUnits = parseUnits(bounty.reviewPaidAmount || '0', this.reviewConfig.tokenDecimals);
     if (targetUnits <= paidUnits) {
       throw new DomainError('This review level is already active', 409, 'REVIEW_ALREADY_PAID');
     }
     if (bounty.reviewPlan === 'SECURITY' && paidUnits > 0n && targetPlan === 'STANDARD') {
       throw new DomainError('A Security review cannot be downgraded', 409, 'REVIEW_DOWNGRADE_NOT_ALLOWED');
     }
-    return { amount: formatTokenUnits(targetUnits - paidUnits), targetPrice };
+    return { amount: formatTokenUnits(targetUnits - paidUnits, this.reviewConfig.tokenDecimals), targetPrice };
   }
 }
 
@@ -366,14 +470,22 @@ const noopSettlementGateway: SettlementGateway = {
   async requestRevision() { return null; }
 };
 
+const unavailableReviewPaymentGateway: ReviewPaymentGateway = {
+  configured: false,
+  async createOrder() { throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED'); },
+  async getOrderStatus() { throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED'); },
+  async waitForConfirmation() { throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED'); },
+  async getOrderProof() { throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED'); }
+};
+
 export interface ReviewConfig {
   paymentToken: `0x${string}` | '';
-  treasury: `0x${string}` | '';
+  tokenDecimals: number;
   standardPrice: string;
   securityPrice: string;
 }
 
-const defaultReviewConfig: ReviewConfig = { paymentToken: '', treasury: '', standardPrice: '1', securityPrice: '2' };
+const defaultReviewConfig: ReviewConfig = { paymentToken: '', tokenDecimals: 6, standardPrice: '1', securityPrice: '2' };
 
 const unavailableReviewPaymentVerifier: ReviewPaymentVerifier = {
   async verify() { throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED'); }
@@ -384,8 +496,14 @@ function requirePaidReviewPlan(plan: ReviewPlan): Exclude<ReviewPlan, 'NONE'> {
   throw new DomainError('Choose Standard or Security to purchase an Owl Agent review', 400, 'PAID_REVIEW_PLAN_REQUIRED');
 }
 
-function formatTokenUnits(units: bigint) {
-  const whole = units / 1_000_000n;
-  const fraction = (units % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '');
+function formatTokenUnits(units: bigint, decimals: number) {
+  if (decimals === 0) return units.toString();
+  const divisor = BigInt(10) ** BigInt(decimals);
+  const whole = units / divisor;
+  const fraction = (units % divisor).toString().padStart(decimals, '0').replace(/0+$/, '');
   return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
+function uniqueValues(values: string[]) {
+  return [...new Set(values)];
 }

@@ -22,6 +22,11 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     explorerUrl: env.GOAT_EXPLORER_URL,
     contractAddress: env.OWL_PAY_CONTRACT_ADDRESS || null,
     paymentTokenAddress: env.PAYMENT_TOKEN_ADDRESS || null,
+    reviewPaymentToken: {
+      address: env.GOAT_FLOW_TOKEN_ADDRESS || null,
+      symbol: env.GOAT_FLOW_TOKEN_SYMBOL,
+      decimals: env.GOAT_FLOW_TOKEN_DECIMALS
+    },
     platformFeeBps: env.PLATFORM_FEE_BPS,
     reviewPrices: { standard: env.STANDARD_REVIEW_PRICE, security: env.SECURITY_REVIEW_PRICE },
     writesEnabled: env.ENABLE_TESTNET_WRITES,
@@ -132,17 +137,19 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
   app.post<{ Params: { id: string } }>('/api/bounties/:id/review-payment', async (request, reply) => {
     const actor = await auth.requireUser(request.headers.authorization);
     const body = request.body as { targetPlan?: 'STANDARD' | 'SECURITY' } | undefined;
-    const requirement = await service.getReviewPaymentRequirement(request.params.id, actor, body?.targetPlan);
+    const order = await service.createReviewPaymentOrder(request.params.id, actor, body?.targetPlan);
+    const paymentRequired = order.x402 ?? order;
     return reply
-      .header('PAYMENT-REQUIRED', Buffer.from(JSON.stringify(requirement)).toString('base64'))
+      .header('PAYMENT-REQUIRED', Buffer.from(JSON.stringify(paymentRequired)).toString('base64'))
       .code(402)
-      .send(requirement);
+      .send(order);
   });
 
   app.post<{ Params: { id: string } }>('/api/bounties/:id/review-payment/confirm', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
-    const body = request.body as { txHash?: string; targetPlan?: 'STANDARD' | 'SECURITY' };
-    const updated = await service.confirmReviewPayment(request.params.id, bytes32Schema.parse(body.txHash) as `0x${string}`, actor, body.targetPlan);
+    const body = request.body as { orderId?: string; txHash?: string };
+    if (!body.orderId || body.orderId.length > 200) return replyValidation(request, 'A valid GOAT Flow orderId is required');
+    const updated = await service.confirmReviewPayment(request.params.id, body.orderId, bytes32Schema.parse(body.txHash) as `0x${string}`, actor);
     if (updated.status === 'SUBMITTED' && updated.reviewPaymentStatus === 'PAID') {
       void service.runPaidReview(request.params.id).catch((error) => request.log.error(error, 'Automatic upgraded Owl Agent review failed'));
     }

@@ -27,7 +27,11 @@ const envSchema = z.object({
   GITHUB_TOKEN: z.string().default(''),
   GOAT_FLOW_API_URL: z.string().url().default('https://flow-api.testnet3.goat.network'),
   GOAT_FLOW_MERCHANT_ID: z.string().default(''),
-  GOAT_FLOW_API_KEY: z.string().default('')
+  GOAT_FLOW_API_KEY: z.string().default(''),
+  GOAT_FLOW_API_SECRET: z.string().default(''),
+  GOAT_FLOW_TOKEN_SYMBOL: z.string().min(1).default('USDC'),
+  GOAT_FLOW_TOKEN_ADDRESS: optionalAddress.default(''),
+  GOAT_FLOW_TOKEN_DECIMALS: z.coerce.number().int().min(0).max(255).default(6)
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -58,6 +62,10 @@ if (parsed.data.ENABLE_TESTNET_WRITES && (!parsed.data.SETTLEMENT_PRIVATE_KEY ||
 
 if (parsed.data.ENABLE_TESTNET_WRITES && (!parsed.data.PAYMENT_TOKEN_ADDRESS || !parsed.data.PLATFORM_TREASURY_ADDRESS)) {
   throw new Error('Testnet writes require PAYMENT_TOKEN_ADDRESS and PLATFORM_TREASURY_ADDRESS.');
+}
+
+if (parsed.data.NODE_ENV === 'production' && (!parsed.data.GOAT_FLOW_API_KEY || !parsed.data.GOAT_FLOW_API_SECRET || !parsed.data.GOAT_FLOW_TOKEN_ADDRESS)) {
+  throw new Error('Production requires GOAT Flow merchant API credentials.');
 }
 
 export const env = parsed.data;

@@ -5,7 +5,7 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'OwlPay',
   applicationName: 'OwlPay',
-  description: 'Agent-native verification and payment infrastructure for GitHub bounties.',
+  description: 'AI-verified GitHub bounties with x402 review payments and onchain rewards on GOAT Network.',
   icons: {
     icon: [{ url: '/owlpay-logo.png', type: 'image/png' }],
     shortcut: '/owlpay-logo.png',
@@ -21,7 +21,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" data-scroll-behavior="smooth">
       <body>
         <Providers>{children}</Providers>
       </body>
