@@ -486,6 +486,12 @@ a { color: inherit; text-decoration: none; }
 .assignedIdentity strong { overflow: hidden; text-overflow: ellipsis; font-size: 15px; white-space: nowrap; }
 .assignedIdentity svg { width: 15px; flex: 0 0 auto; color: var(--muted); }
 .assignedMeta { color: var(--muted); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.resolutionTimeline { margin-top: 18px; padding: 15px 18px; border: 1px solid var(--line); border-radius: 17px; background: #fafaf7; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 0; }
+.resolutionTimeline > div { min-width: 0; padding: 4px 18px; display: grid; gap: 6px; }
+.resolutionTimeline > div:first-child { padding-left: 0; }
+.resolutionTimeline > div + div { border-left: 1px solid var(--line); }
+.resolutionTimeline span { color: var(--muted); font-size: 9px; font-weight: 780; letter-spacing: .08em; text-transform: uppercase; }
+.resolutionTimeline strong { overflow: hidden; font-size: 12px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .maintainerReview { margin-top: 20px; padding: 18px; border: 1px solid var(--line); border-radius: 17px; background: white; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .maintainerReview h3 { margin: 0; font-size: 20px; letter-spacing: -.03em; }
 .maintainerReview > div { display: flex; gap: 9px; flex: 0 0 auto; }
@@ -496,6 +502,27 @@ a { color: inherit; text-decoration: none; }
 .revisionDecisionButton:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(180,105,0,.12); }
 .approveDecisionButton { background: var(--green); color: white; }
 .approveDecisionButton:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(36,92,68,.2); }
+.rejectDecisionButton { border-color: #d7635c; background: #fff0ef; color: #a42f29; }
+.rejectDecisionButton:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(164,47,41,.13); }
+.expiredRefundCard { margin-top: 20px; padding: 18px; border: 1px solid rgba(183,54,45,.2); border-radius: 17px; background: #fff6f5; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.expiredRefundCard > div { display: grid; gap: 5px; }
+.expiredRefundCard strong { font-size: 15px; }
+.expiredRefundCard p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.timeoutResolutionCard { margin-top: 20px; padding: 21px; border: 1px solid var(--line); border-radius: 19px; background: white; display: grid; gap: 16px; }
+.timeout-success { border-color: rgba(36,92,68,.2); background: #f1f7f3; }
+.timeout-warning { border-color: rgba(208,146,47,.3); background: #fff9ed; }
+.timeout-danger { border-color: rgba(183,54,45,.22); background: #fff5f4; }
+.timeout-neutral { background: #f6f6f3; }
+.timeoutResolutionCopy { display: grid; gap: 6px; }
+.timeoutResolutionCopy > span { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.timeoutResolutionCopy > strong { font-size: 20px; letter-spacing: -.025em; }
+.timeoutResolutionCopy p { max-width: 700px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.timeoutResolutionCopy small { color: #8a5200; font-size: 10px; font-weight: 700; }
+.timeoutAppeal { display: grid; gap: 9px; }
+.timeoutAppeal textarea { width: 100%; min-height: 86px; padding: 13px 14px; resize: vertical; border: 1px solid rgba(208,146,47,.35); border-radius: 13px; background: white; outline: none; line-height: 1.5; }
+.timeoutAppeal textarea:focus { border-color: #d0922f; box-shadow: 0 0 0 4px rgba(208,146,47,.1); }
+.timeoutAppeal > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.timeoutAppeal small { color: var(--muted); font-size: 10px; }
 .revisionFeedbackCard { margin-top: 20px; padding: 20px; border: 1px solid rgba(192,119,10,.2); border-radius: 18px; background: #fff8e9; box-shadow: 0 8px 24px rgba(133,80,0,.05); }
 .revisionFeedbackHeader { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .revisionFeedbackHeader span { color: #8a5200; font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
@@ -951,6 +978,14 @@ a { color: inherit; text-decoration: none; }
   .candidateCard > button,.candidateCard > .applicationState { grid-column: 2; }
   .assignedNotice { align-items: flex-start; flex-direction: column; }
   .assignedMeta { padding-left: 60px; white-space: normal; }
+  .resolutionTimeline { grid-template-columns: 1fr; }
+  .resolutionTimeline > div { padding: 11px 0; }
+  .resolutionTimeline > div + div { border-top: 1px solid var(--line); border-left: 0; }
+  .resolutionTimeline strong { white-space: normal; }
+  .expiredRefundCard { align-items: stretch; flex-direction: column; }
+  .expiredRefundCard button { width: 100%; }
+  .timeoutAppeal > div { align-items: stretch; flex-direction: column; }
+  .timeoutAppeal button { width: 100%; }
   .applicationForm > div,.maintainerReview { align-items: stretch; flex-direction: column; }
   .reviewUpgradeGrid { grid-template-columns: 1fr; }
   .reviewUpgradeHeading { align-items: center; flex-direction: row; }

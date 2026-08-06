@@ -90,6 +90,7 @@ function reviewEvidence(): PullRequestReviewEvidence {
       pullRequestUrl: 'https://github.com/owlpay/demo/pull/42',
       number: 42,
       state: 'open',
+      merged: false,
       headSha: commitSha,
       changedFiles: 1,
       additions: 12,

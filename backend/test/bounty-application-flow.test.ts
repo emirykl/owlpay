@@ -19,7 +19,7 @@ const github: GitHubEvidenceProvider = {
     return { id: 1, name: 'demo', fullName: 'owlpay/demo', url: repositoryUrl, ownerLogin: 'owlpay', ownerAvatarUrl: null, permission: 'admin' };
   },
   async getPullRequest(pullRequestUrl) {
-    return { repositoryUrl: 'https://github.com/owlpay/demo', pullRequestUrl, number: 42, state: 'open', headSha: 'a'.repeat(40), changedFiles: 2, additions: 30, deletions: 4, authorId: 202, author: 'developer-two', title: 'Complete bounty', body: 'Implements the requested criteria.' };
+    return { repositoryUrl: 'https://github.com/owlpay/demo', pullRequestUrl, number: 42, state: 'open', merged: false, headSha: 'a'.repeat(40), changedFiles: 2, additions: 30, deletions: 4, authorId: 202, author: 'developer-two', title: 'Complete bounty', body: 'Implements the requested criteria.' };
   },
   async reviewPullRequest() {
     return { confidence: 0.94, criterionResults: [{ criterionId: 'health', status: 'PASSED' as const, evidence: ['CI passed'], summary: 'Endpoint and tests pass.' }], blockingIssues: [] };
@@ -29,7 +29,9 @@ const github: GitHubEvidenceProvider = {
 const settlement: SettlementGateway = {
   writesEnabled: true,
   async approveAndRelease() { return `0x${'9'.repeat(64)}`; },
-  async requestRevision() { return `0x${'8'.repeat(64)}`; }
+  async requestRevision() { return `0x${'8'.repeat(64)}`; },
+  async approveAfterTimeout() { return `0x${'7'.repeat(64)}`; },
+  async refundAfterTimeout() { return `0x${'6'.repeat(64)}`; }
 };
 
 const paymentToken = '0x0000000000000000000000000000000000000010' as const;
@@ -304,5 +306,59 @@ describe('bounty application and assignment flow', () => {
     expect(revisedSubmission.bounty.status).toBe('SUBMITTED');
     expect(revisedSubmission.bounty.decision).toBeUndefined();
     expect(await service.approve(draft.id, owner)).toMatchObject({ status: 'PAID', payoutTxHash: `0x${'9'.repeat(64)}` });
+  });
+
+  it('automatically pays a qualifying submission only after the fixed maintainer window ends', async () => {
+    const repository = new InMemoryBountyRepository();
+    const service = new BountyService(repository, new InMemoryApplicationRepository(), github, new VerificationPolicy(), settlement);
+    const deadline = new Date(Date.now() + 86_400_000).toISOString();
+    const draft = await service.create({
+      title: 'Resolve an unanswered review',
+      description: 'The Owl AI fallback resolves qualifying work after maintainer inactivity.',
+      repositoryUrl: 'https://github.com/owlpay/demo',
+      ownerAddress: '0x0000000000000000000000000000000000000001',
+      rewardAmount: '20', reviewPlan: 'NONE', deadline,
+      criteria: [{ id: 'health', description: 'GET /health returns HTTP 200', mandatory: true, method: 'ci' }]
+    }, owner, 'github-token');
+    await service.markFunded(draft.id, '1', `0x${'1'.repeat(64)}`, owner.id);
+    const application = await service.apply(draft.id, {
+      message: 'I can complete this bounty with tests and supporting evidence.',
+      developerAddress: '0x0000000000000000000000000000000000000003'
+    }, developers[1]!);
+    await service.assign(draft.id, application.id, owner);
+    await service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: application.developerAddress }, developers[1]!);
+
+    expect(await service.resolveDueBounties(new Date(deadline).getTime() + 6 * 86_400_000)).toEqual([]);
+    await service.resolveDueBounties(new Date(deadline).getTime() + 7 * 86_400_000 + 1);
+    expect(await service.get(draft.id)).toMatchObject({ status: 'PAID', timeoutResolution: 'AUTO_APPROVED', payoutTxHash: `0x${'7'.repeat(64)}` });
+  });
+
+  it('holds a low-confidence timeout decision for appeal instead of refunding immediately', async () => {
+    const lowConfidenceGithub: GitHubEvidenceProvider = {
+      ...github,
+      async reviewPullRequest() {
+        return { confidence: 0.4, criterionResults: [{ criterionId: 'health', status: 'UNKNOWN' as const, evidence: [], summary: 'No successful CI run.' }], blockingIssues: [] };
+      }
+    };
+    const service = new BountyService(new InMemoryBountyRepository(), new InMemoryApplicationRepository(), lowConfidenceGithub, new VerificationPolicy(), settlement);
+    const deadline = new Date(Date.now() + 86_400_000).toISOString();
+    const draft = await service.create({
+      title: 'Appeal an uncertain review',
+      description: 'Low confidence work remains escrowed during the contributor appeal window.',
+      repositoryUrl: 'https://github.com/owlpay/demo',
+      ownerAddress: '0x0000000000000000000000000000000000000001',
+      rewardAmount: '20', reviewPlan: 'NONE', deadline,
+      criteria: [{ id: 'health', description: 'GET /health returns HTTP 200', mandatory: true, method: 'ci' }]
+    }, owner, 'github-token');
+    await service.markFunded(draft.id, '1', `0x${'1'.repeat(64)}`, owner.id);
+    const application = await service.apply(draft.id, {
+      message: 'I can complete this bounty with tests and supporting evidence.',
+      developerAddress: '0x0000000000000000000000000000000000000003'
+    }, developers[1]!);
+    await service.assign(draft.id, application.id, owner);
+    await service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: application.developerAddress }, developers[1]!);
+    await service.resolveDueBounties(new Date(deadline).getTime() + 7 * 86_400_000 + 1);
+    expect(await service.get(draft.id)).toMatchObject({ status: 'HUMAN_REVIEW', timeoutResolution: 'AUTO_FAILED_PENDING' });
+    expect(await service.appealTimeoutResolution(draft.id, developers[1]!, 'The CI evidence is now available and should be reviewed again.')).toMatchObject({ timeoutResolution: 'DISPUTED' });
   });
 });

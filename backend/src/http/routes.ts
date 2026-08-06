@@ -4,7 +4,7 @@ import type { AuthVerifier } from '../application/auth.js';
 import type { WalletIdentity } from '../application/wallet-identity.js';
 import { addressSchema, bytes32Schema } from '../domain/schemas.js';
 import { env } from '../config/env.js';
-import { createApplicationSchema, createBountySchema, requestRevisionSchema, submitWorkSchema, verificationInputSchema } from '../domain/schemas.js';
+import { appealResolutionSchema, createApplicationSchema, createBountySchema, requestRevisionSchema, submitWorkSchema, verificationInputSchema } from '../domain/schemas.js';
 import { getNetworkStatus } from '../infrastructure/goat-client.js';
 
 export async function registerRoutes(app: FastifyInstance, service: BountyService, auth: AuthVerifier, walletIdentity: WalletIdentity) {
@@ -100,6 +100,13 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     return service.markFunded(request.params.id, body.onchainId, body.fundingTxHash!, actor.id);
   });
 
+  app.post<{ Params: { id: string } }>('/api/bounties/:id/refunded', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    const body = request.body as { refundTxHash?: string };
+    const refundTxHash = bytes32Schema.parse(body.refundTxHash);
+    return service.markRefunded(request.params.id, refundTxHash, actor);
+  });
+
   app.post<{ Params: { id: string } }>('/api/bounties/:id/applications', async (request, reply) => {
     const actor = await auth.requireUser(request.headers.authorization);
     const input = createApplicationSchema.parse(request.body);
@@ -183,6 +190,12 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
   app.post<{ Params: { id: string } }>('/api/bounties/:id/request-revision', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
     return service.requestRevision(request.params.id, actor, requestRevisionSchema.parse(request.body));
+  });
+
+  app.post<{ Params: { id: string } }>('/api/bounties/:id/resolution-appeal', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    const input = appealResolutionSchema.parse(request.body);
+    return service.appealTimeoutResolution(request.params.id, actor, input.message);
   });
 }
 

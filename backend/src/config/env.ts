@@ -28,6 +28,8 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().default(''),
   OPENAI_MODEL: z.string().min(1).default('gpt-5-nano'),
   OPENAI_REVIEW_MAX_DIFF_CHARACTERS: z.coerce.number().int().min(1_000).max(250_000).default(60_000),
+  ENABLE_RESOLUTION_WORKER: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
+  RESOLUTION_WORKER_INTERVAL_MS: z.coerce.number().int().min(10_000).max(3_600_000).default(60_000),
   GOAT_FLOW_API_URL: z.string().url().default('https://flow-api.testnet3.goat.network'),
   GOAT_FLOW_MERCHANT_ID: z.string().default(''),
   GOAT_FLOW_API_KEY: z.string().default(''),

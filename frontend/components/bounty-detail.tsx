@@ -29,6 +29,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const [reportOpen, setReportOpen] = useState(false);
   const [revisionComposerOpen, setRevisionComposerOpen] = useState(false);
   const [revisionMessage, setRevisionMessage] = useState('');
+  const [appealMessage, setAppealMessage] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const detail = useQuery({ queryKey: ['bounty', initialBounty.id], queryFn: () => owlpayApi.getBounty(initialBounty.id), initialData: initialBounty, refetchInterval: LIVE_SYNC_INTERVAL, refetchIntervalInBackground: false });
   const identity = useQuery({ queryKey: ['identity'], queryFn: owlpayApi.me, enabled: configured && Boolean(user), retry: false });
@@ -41,6 +42,8 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const myApplication = myApplications.data?.items.find((item) => item.application.bountyId === bounty.id)?.application;
   const network = useQuery({ queryKey: ['network'], queryFn: owlpayApi.network, retry: false });
   const deadline = getBountyDeadlineState(bounty.deadline, now);
+  const contributorDeadline = getBountyDeadlineState(bounty.contributorDeadline ?? bounty.deadline, now);
+  const maintainerDeadline = getBountyDeadlineState(bounty.maintainerReviewDeadline ?? bounty.deadline, now);
   const isClosed = bounty.status === 'OPEN' && deadline.closed;
   const platformFeeRate = (network.data?.platformFeeBps ?? 300) / 10_000;
   const estimatedPayout = Math.max(0, Number(bounty.rewardAmount) * (1 - platformFeeRate));
@@ -56,6 +59,11 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const standardActive = !securityActive && bounty.reviewPlan === 'STANDARD' && paidReviewAmount >= standardPrice && ['PAID', 'CONSUMED'].includes(bounty.reviewPaymentStatus);
   const canUpgradeReview = isOwner && bounty.reviewPaymentStatus !== 'CONSUMED' && !['PAID', 'REFUNDED', 'CANCELLED'].includes(bounty.status);
   const latestRevisionRequest = bounty.revisionRequests?.at(-1);
+  const revisionCount = bounty.revisionRequests?.length ?? 0;
+  const reviewWindowClosed = maintainerDeadline.closed;
+  const revisionWindowClosed = reviewWindowClosed || new Date(bounty.maintainerReviewDeadline).getTime() - now < 2 * 24 * 60 * 60 * 1_000;
+  const canRequestRevision = revisionCount < 2 && !revisionWindowClosed;
+  const deliveryExpired = contributorDeadline.closed && ['OPEN', 'ASSIGNED', 'REVISION_REQUIRED', 'EXPIRED'].includes(bounty.status);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
@@ -178,6 +186,32 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
       await queryClient.invalidateQueries({ queryKey: ['bounties'] });
     }
   });
+  const appealMutation = useMutation({
+    mutationFn: () => owlpayApi.appealResolution(bounty.id, appealMessage.trim()),
+    onSuccess: async (updated) => {
+      setAppealMessage('');
+      setSuccess('Appeal submitted. The escrow is paused for manual dispute review.');
+      queryClient.setQueryData(['bounty', bounty.id], updated);
+      await queryClient.invalidateQueries({ queryKey: ['bounties'] });
+    }
+  });
+  const refundMutation = useMutation({
+    mutationFn: async () => {
+      if (!address || address.toLowerCase() !== bounty.ownerAddress.toLowerCase()) throw new Error('Connect the wallet that funded this bounty.');
+      if (!contractsReady || !contractAddress || !bounty.onchainId || !/^\d+$/.test(bounty.onchainId)) throw new Error('The escrow contract is not configured for this bounty.');
+      const refundTxHash = await sendTransaction({
+        to: contractAddress,
+        data: encodeFunctionData({ abi: owlPayAbi, functionName: 'refundExpiredBounty', args: [BigInt(bounty.onchainId)] })
+      });
+      await goatPublicClient.waitForTransactionReceipt({ hash: refundTxHash });
+      return owlpayApi.markRefunded(bounty.id, refundTxHash);
+    },
+    onSuccess: async (updated) => {
+      setSuccess('The missed-delivery bounty was refunded to the maintainer wallet.');
+      queryClient.setQueryData(['bounty', bounty.id], updated);
+      await queryClient.invalidateQueries({ queryKey: ['bounties'] });
+    }
+  });
 
   function submitWork(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -213,6 +247,14 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
             <div><dt>Deadline</dt><dd>{deadlineLabel}</dd></div>
           </dl>
         </div>
+
+        {bounty.status !== 'OPEN' && bounty.status !== 'DRAFT' && (
+          <div className="resolutionTimeline" aria-label="Bounty resolution timeline">
+            <div><span>Contributor deadline</span><strong>{formatWorkflowDeadline(bounty.contributorDeadline, contributorDeadline.label, contributorDeadline.closed)}</strong></div>
+            <div><span>Maintainer decision by</span><strong>{formatWorkflowDeadline(bounty.maintainerReviewDeadline, maintainerDeadline.label, maintainerDeadline.closed)}</strong></div>
+            <div><span>Revisions</span><strong>{revisionCount}/2 used{bounty.revisionExtensionUsed ? ' · extension used' : ''}</strong></div>
+          </div>
+        )}
 
         <div className="detailSection detailCardSection criteriaSection">
           <div className="detailSectionTitle"><h3>Acceptance criteria</h3></div>
@@ -264,6 +306,10 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
 
         {bounty.submission && <div className="submissionCard"><span>Submitted commit</span><strong>{bounty.submission.commitSha.slice(0, 10)}</strong><a href={bounty.submission.pullRequestUrl} target="_blank" rel="noreferrer">Open pull request <ArrowUpRight /></a></div>}
 
+        {bounty.timeoutResolution !== 'NONE' && (
+          <TimeoutResolutionCard bounty={bounty} now={now} isAssignedDeveloper={isAssignedDeveloper} appealMessage={appealMessage} onAppealMessage={setAppealMessage} onAppeal={() => appealMutation.mutate()} appealPending={appealMutation.isPending} appealError={appealMutation.error?.message} />
+        )}
+
         {canUpgradeReview && !securityActive && (
           <div className="reviewUpgradeSection">
             <div className="reviewUpgradeHeading"><h3>AI Review</h3>{standardActive && <span>Standard active</span>}</div>
@@ -306,7 +352,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
               <time dateTime={latestRevisionRequest.requestedAt}>{new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(latestRevisionRequest.requestedAt))}</time>
             </div>
             <p>{latestRevisionRequest.message}</p>
-            <small>Requested for commit {latestRevisionRequest.commitSha.slice(0, 8)}</small>
+            <small>Requested for commit {latestRevisionRequest.commitSha.slice(0, 8)}{latestRevisionRequest.extensionGranted ? ` · one-time extension granted until ${formatDateTime(latestRevisionRequest.contributorDeadline ?? bounty.contributorDeadline)}` : ''}</small>
           </article>
         )}
 
@@ -318,13 +364,17 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
           </div>
         )}
 
-        {isOwner && (bounty.status === 'READY_FOR_REVIEW' || (bounty.status === 'SUBMITTED' && (bounty.reviewPlan === 'NONE' || Boolean(bounty.revisionRequests?.length)))) && (
-          <div className="maintainerReview"><h3>Decision</h3><div><button className="decisionButton revisionDecisionButton" onClick={() => setRevisionComposerOpen(true)} disabled={reviewMutation.isPending}>Request revision</button><button className="decisionButton approveDecisionButton" onClick={() => reviewMutation.mutate({ type: 'approve' })} disabled={reviewMutation.isPending}>{reviewMutation.isPending ? 'Processing…' : 'Approve & release'}</button></div></div>
+        {isOwner && !reviewWindowClosed && (bounty.status === 'READY_FOR_REVIEW' || (bounty.status === 'SUBMITTED' && (bounty.reviewPlan === 'NONE' || Boolean(bounty.revisionRequests?.length)))) && (
+          <div className="maintainerReview"><h3>Decision</h3><div><button className="decisionButton revisionDecisionButton" onClick={() => setRevisionComposerOpen(true)} disabled={reviewMutation.isPending || !canRequestRevision} title={!canRequestRevision ? revisionCount >= 2 ? 'The two-revision limit has been reached.' : 'Revisions close during the final 48 hours.' : undefined}>Request revision{revisionCount > 0 ? ` (${revisionCount}/2)` : ''}</button><button className="decisionButton approveDecisionButton" onClick={() => reviewMutation.mutate({ type: 'approve' })} disabled={reviewMutation.isPending}>{reviewMutation.isPending ? 'Processing…' : 'Approve & release'}</button></div></div>
+        )}
+        {isOwner && deliveryExpired && bounty.status !== 'REFUNDED' && (
+          <div className="expiredRefundCard"><div><strong>Contributor delivery window ended</strong><p>No eligible submission was received before the deadline. The escrow can be returned to your wallet.</p></div><button className="decisionButton rejectDecisionButton" onClick={() => refundMutation.mutate()} disabled={refundMutation.isPending}>{refundMutation.isPending ? 'Refunding…' : 'Refund escrow'}</button></div>
         )}
         {reviewMutation.error && !revisionComposerOpen && <p className="formError" role="alert">{reviewMutation.error.message}</p>}
+        {refundMutation.error && <p className="formError" role="alert">{getTransactionErrorMessage(refundMutation.error, 'The refund transaction could not be completed. Please try again.')}</p>}
         {success && <p className="formSuccess" role="status">{success}</p>}
 
-        {(bounty.fundingTxHash || bounty.payoutTxHash) && <div className="detailFooter">{bounty.fundingTxHash && <a href={`${goatTestnet.blockExplorers.default.url}/tx/${bounty.fundingTxHash}`} target="_blank" rel="noreferrer">Funding transaction <ArrowUpRight /></a>}{bounty.payoutTxHash && <a href={`${goatTestnet.blockExplorers.default.url}/tx/${bounty.payoutTxHash}`} target="_blank" rel="noreferrer">Payout transaction <ArrowUpRight /></a>}</div>}
+        {(bounty.fundingTxHash || bounty.payoutTxHash || bounty.refundTxHash) && <div className="detailFooter">{bounty.fundingTxHash && <a href={`${goatTestnet.blockExplorers.default.url}/tx/${bounty.fundingTxHash}`} target="_blank" rel="noreferrer">Funding transaction <ArrowUpRight /></a>}{bounty.payoutTxHash && <a href={`${goatTestnet.blockExplorers.default.url}/tx/${bounty.payoutTxHash}`} target="_blank" rel="noreferrer">Payout transaction <ArrowUpRight /></a>}{bounty.refundTxHash && <a href={`${goatTestnet.blockExplorers.default.url}/tx/${bounty.refundTxHash}`} target="_blank" rel="noreferrer">Refund transaction <ArrowUpRight /></a>}</div>}
       </section>
       <AnimatePresence>
         {reviewInfo && <ReviewPackageInfoModal key={reviewInfo} plan={reviewInfo} onClose={() => setReviewInfo(null)} />}
@@ -333,6 +383,42 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
       </AnimatePresence>
     </div>
   );
+}
+
+function TimeoutResolutionCard({ bounty, now, isAssignedDeveloper, appealMessage, onAppealMessage, onAppeal, appealPending, appealError }: {
+  bounty: Bounty;
+  now: number;
+  isAssignedDeveloper: boolean;
+  appealMessage: string;
+  onAppealMessage: (value: string) => void;
+  onAppeal: () => void;
+  appealPending: boolean;
+  appealError?: string;
+}) {
+  if (bounty.timeoutResolution === 'NONE') return null;
+  const content = {
+    AUTO_APPROVED: ['Owl AI timeout decision', 'Approved automatically', 'The maintainer window ended without a decision. The submission met the 60/100 threshold and mandatory safeguards.'],
+    AUTO_FAILED_PENDING: ['Owl AI timeout decision', 'Refund pending', 'The score or mandatory evidence did not meet the automatic payout rules. The contributor may appeal before the refund is finalized.'],
+    INCONCLUSIVE: ['Owl AI timeout decision', 'Manual dispute review required', 'The evidence was not strong enough for either automatic payout or automatic refund. Escrow remains locked.'],
+    DISPUTED: ['Resolution appeal', 'Escrow paused for review', 'The contributor appealed the Owl AI timeout decision. Funds remain locked until the dispute is resolved.'],
+    AUTO_REFUNDED: ['Owl AI timeout decision', 'Escrow refunded', 'The appeal window ended and the bounty escrow was returned to the maintainer.']
+  }[bounty.timeoutResolution];
+  const tone = bounty.timeoutResolution === 'AUTO_APPROVED' ? 'success' : bounty.timeoutResolution === 'AUTO_FAILED_PENDING' ? 'warning' : bounty.timeoutResolution === 'AUTO_REFUNDED' ? 'danger' : 'neutral';
+  const canAppeal = bounty.timeoutResolution === 'AUTO_FAILED_PENDING' && isAssignedDeveloper && Boolean(bounty.appealDeadline) && now < new Date(bounty.appealDeadline!).getTime();
+  return (
+    <article className={`timeoutResolutionCard timeout-${tone}`}>
+      <div className="timeoutResolutionCopy"><span>{content[0]}</span><strong>{content[1]}</strong><p>{content[2]}</p>{bounty.appealDeadline && bounty.timeoutResolution === 'AUTO_FAILED_PENDING' && <small>Appeal deadline: {formatDateTime(bounty.appealDeadline)}</small>}</div>
+      {canAppeal && <div className="timeoutAppeal"><textarea rows={3} minLength={20} maxLength={2000} value={appealMessage} onChange={(event) => onAppealMessage(event.target.value)} placeholder="Explain why the evidence or score should be reviewed…" /><div><small>{appealMessage.length}/2000 · minimum 20</small><button className="secondaryButton" disabled={appealPending || appealMessage.trim().length < 20} onClick={onAppeal}>{appealPending ? 'Submitting…' : 'Appeal decision'}</button></div>{appealError && <p className="formError" role="alert">{appealError}</p>}</div>}
+    </article>
+  );
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+}
+
+function formatWorkflowDeadline(value: string, relative: string, closed: boolean) {
+  return closed ? `Ended · ${formatDateTime(value)}` : `${relative} · ${formatDateTime(value)}`;
 }
 
 function RevisionRequestModal({ value, pending, error, onChange, onClose, onSubmit }: { value: string; pending: boolean; error?: string; onChange: (value: string) => void; onClose: () => void; onSubmit: () => void }) {

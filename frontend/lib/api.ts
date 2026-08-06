@@ -35,8 +35,17 @@ export interface Bounty {
     commitSha: string;
     requestedAt: string;
     requestedByGithubLogin?: string;
+    extensionGranted?: boolean;
+    contributorDeadline?: string;
   }>;
   deadline: string;
+  contributorDeadline: string;
+  maintainerReviewDeadline: string;
+  revisionExtensionUsed: boolean;
+  timeoutResolution: 'NONE' | 'AUTO_APPROVED' | 'AUTO_FAILED_PENDING' | 'INCONCLUSIVE' | 'DISPUTED' | 'AUTO_REFUNDED';
+  timeoutResolvedAt?: string;
+  appealDeadline?: string;
+  appealMessage?: string;
   criteria: Criterion[];
   status: BountyStatus;
   createdAt: string;
@@ -44,6 +53,7 @@ export interface Bounty {
   onchainId?: string;
   fundingTxHash?: string;
   payoutTxHash?: string;
+  refundTxHash?: string;
   assignedDeveloperUserId?: string;
   assignedDeveloperGithubLogin?: string;
   assignedDeveloperAddress?: string;
@@ -237,5 +247,11 @@ export const owlpayApi = {
   approveBounty: (id: string) => api<Bounty>(`/api/bounties/${id}/approve`, { method: 'POST' }),
   requestBountyRevision: (id: string, message: string) => api<Bounty>(`/api/bounties/${id}/request-revision`, {
     method: 'POST', body: JSON.stringify({ message })
+  }),
+  appealResolution: (id: string, message: string) => api<Bounty>(`/api/bounties/${id}/resolution-appeal`, {
+    method: 'POST', body: JSON.stringify({ message })
+  }),
+  markRefunded: (id: string, refundTxHash: string) => api<Bounty>(`/api/bounties/${id}/refunded`, {
+    method: 'POST', body: JSON.stringify({ refundTxHash })
   })
 };

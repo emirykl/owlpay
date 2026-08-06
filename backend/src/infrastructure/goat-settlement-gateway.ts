@@ -7,7 +7,8 @@ import { goatPublicClient, goatTestnet } from './goat-client.js';
 const settlementAbi = parseAbi([
   'function approveSubmission(uint256 bountyId, bytes32 verificationHash)',
   'function releasePayment(uint256 bountyId)',
-  'function requestRevision(uint256 bountyId, bytes32 verificationHash)'
+  'function requestRevision(uint256 bountyId, bytes32 verificationHash)',
+  'function resolveReviewTimeout(uint256 bountyId, bytes32 verificationHash, bool approve)'
 ]);
 
 export class GoatSettlementGateway implements SettlementGateway {
@@ -32,6 +33,30 @@ export class GoatSettlementGateway implements SettlementGateway {
     if (!this.writesEnabled) return null;
     const hash = await settlementWallet().writeContract({
       address: contractAddress(), abi: settlementAbi, functionName: 'requestRevision', args: [BigInt(onchainId), verificationHash]
+    });
+    await goatPublicClient.waitForTransactionReceipt({ hash });
+    return hash;
+  }
+
+  async approveAfterTimeout(onchainId: string, verificationHash: `0x${string}`) {
+    if (!this.writesEnabled) return null;
+    const client = settlementWallet();
+    const bountyId = BigInt(onchainId);
+    const approvalHash = await client.writeContract({
+      address: contractAddress(), abi: settlementAbi, functionName: 'resolveReviewTimeout', args: [bountyId, verificationHash, true]
+    });
+    await goatPublicClient.waitForTransactionReceipt({ hash: approvalHash });
+    const payoutHash = await client.writeContract({
+      address: contractAddress(), abi: settlementAbi, functionName: 'releasePayment', args: [bountyId]
+    });
+    await goatPublicClient.waitForTransactionReceipt({ hash: payoutHash });
+    return payoutHash;
+  }
+
+  async refundAfterTimeout(onchainId: string, verificationHash: `0x${string}`) {
+    if (!this.writesEnabled) return null;
+    const hash = await settlementWallet().writeContract({
+      address: contractAddress(), abi: settlementAbi, functionName: 'resolveReviewTimeout', args: [BigInt(onchainId), verificationHash, false]
     });
     await goatPublicClient.waitForTransactionReceipt({ hash });
     return hash;

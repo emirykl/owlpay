@@ -64,6 +64,25 @@ export function buildApp() {
   });
   app.register(async (routesApp) => registerRoutes(routesApp, service, auth, walletIdentity));
 
+  if (env.NODE_ENV !== 'test' && env.ENABLE_RESOLUTION_WORKER) {
+    let resolutionRunning = false;
+    const resolveDueBounties = async () => {
+      if (resolutionRunning) return;
+      resolutionRunning = true;
+      try {
+        await service.resolveDueBounties();
+      } catch (error) {
+        app.log.error(error, 'Bounty resolution worker failed');
+      } finally {
+        resolutionRunning = false;
+      }
+    };
+    const resolutionTimer = setInterval(resolveDueBounties, env.RESOLUTION_WORKER_INTERVAL_MS);
+    resolutionTimer.unref();
+    app.addHook('onReady', resolveDueBounties);
+    app.addHook('onClose', async () => clearInterval(resolutionTimer));
+  }
+
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ZodError) {
       return reply.code(400).send({ code: 'VALIDATION_ERROR', message: 'Request validation failed', issues: error.issues });
