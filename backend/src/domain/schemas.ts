@@ -118,6 +118,10 @@ export interface Submission {
   commitSha: string;
   submissionHash: string;
   submissionTxHash?: string;
+  author?: string;
+  changedFiles?: number;
+  additions?: number;
+  deletions?: number;
   submittedAt: string;
 }
 

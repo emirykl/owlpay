@@ -42,12 +42,30 @@ export interface Bounty {
   assignedDeveloperAddress?: string;
   assignedAt?: string;
   assignmentTxHash?: string;
-  submission?: { pullRequestUrl: string; commitSha: string; submissionHash: string; submissionTxHash?: string; developerAddress: string; developerUserId?: string };
+  submission?: {
+    pullRequestUrl: string;
+    commitSha: string;
+    submissionHash: string;
+    submissionTxHash?: string;
+    developerAddress: string;
+    developerUserId?: string;
+    author?: string;
+    changedFiles?: number;
+    additions?: number;
+    deletions?: number;
+  };
   decision?: {
     decision: 'APPROVE' | 'REVISION_REQUIRED' | 'HUMAN_REVIEW';
     confidence: number;
     summary: string;
     blockingIssues: string[];
+    criterionResults?: Array<{
+      criterionId: string;
+      status: 'PASSED' | 'FAILED' | 'UNKNOWN';
+      evidence: string[];
+      summary: string;
+    }>;
+    decidedAt?: string;
   };
 }
 
@@ -163,6 +181,7 @@ async function authenticatedHeaders(githubAccess = false) {
 export const owlpayApi = {
   listBounties: () => api<{ items: Bounty[] }>('/api/bounties'),
   getBounty: (id: string) => api<Bounty>(`/api/bounties/${id}`),
+  getSubmissionReportEvidence: (id: string) => api<{ author?: string; changedFiles: number; additions: number; deletions: number }>(`/api/bounties/${id}/submission-report-evidence`),
   network: () => api<NetworkInfo>('/api/network'),
   me: () => api<CurrentIdentity>('/api/me'),
   listManageableRepositories: () => api<{ items: ManageableRepository[] }>('/api/github/repositories', undefined, true),

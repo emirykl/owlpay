@@ -26,6 +26,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const [success, setSuccess] = useState<string | null>(null);
   const [applicationMessage, setApplicationMessage] = useState('');
   const [reviewInfo, setReviewInfo] = useState<'STANDARD' | 'SECURITY' | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const detail = useQuery({ queryKey: ['bounty', initialBounty.id], queryFn: () => owlpayApi.getBounty(initialBounty.id), initialData: initialBounty, refetchInterval: LIVE_SYNC_INTERVAL, refetchIntervalInBackground: false });
   const identity = useQuery({ queryKey: ['identity'], queryFn: owlpayApi.me, enabled: configured && Boolean(user), retry: false });
@@ -58,11 +59,15 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   }, []);
 
   useEffect(() => {
-    if (!reviewInfo) return;
-    const closeOnEscape = (event: KeyboardEvent) => event.key === 'Escape' && setReviewInfo(null);
+    if (!reviewInfo && !reportOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setReviewInfo(null);
+      setReportOpen(false);
+    };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [reviewInfo]);
+  }, [reportOpen, reviewInfo]);
 
   const applyMutation = useMutation({
     mutationFn: () => {
@@ -231,7 +236,18 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
           </div>
         )}
 
-        {bounty.assignedDeveloperGithubLogin && <div className="assignedNotice"><span className="statusDot" /><p><strong>Assigned to @{bounty.assignedDeveloperGithubLogin}</strong><small>{isAssignedDeveloper ? `Estimated payout: ${estimatedPayout.toFixed(2)} otUSDC after the ${(platformFeeRate * 100).toFixed(0)}% OwlPay fee.` : 'Only the selected developer can submit work.'}</small></p></div>}
+        {bounty.assignedDeveloperGithubLogin && (
+          <div className="assignedNotice">
+            <a className="assignedIdentity" href={`https://github.com/${bounty.assignedDeveloperGithubLogin}`} target="_blank" rel="noreferrer">
+              <span className="assignedAvatar" style={{ backgroundImage: `url(https://github.com/${encodeURIComponent(bounty.assignedDeveloperGithubLogin)}.png?size=128)` }} />
+              <span><small>Assigned developer</small><strong>@{bounty.assignedDeveloperGithubLogin}</strong></span>
+              <ArrowUpRight />
+            </a>
+            <span className="assignedMeta">{isAssignedDeveloper
+              ? `Estimated payout ${estimatedPayout.toFixed(2)} otUSDC · ${(platformFeeRate * 100).toFixed(0)}% fee`
+              : bounty.assignedDeveloperAddress ? `${bounty.assignedDeveloperAddress.slice(0, 8)}…${bounty.assignedDeveloperAddress.slice(-6)}` : 'Verified GitHub developer'}</span>
+          </div>
+        )}
 
         {bounty.submission && <div className="submissionCard"><span>Submitted commit</span><strong>{bounty.submission.commitSha.slice(0, 10)}</strong><a href={bounty.submission.pullRequestUrl} target="_blank" rel="noreferrer">Open pull request <ArrowUpRight /></a></div>}
 
@@ -268,7 +284,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
         {purchaseReviewErrorMessage && <p className="formError" role="alert">{purchaseReviewErrorMessage}</p>}
         {agentReviewMutation.error && <p className="formError" role="alert">{agentReviewMutation.error.message}</p>}
 
-        {bounty.decision && <div className={`decisionCard decision-${bounty.decision.decision.toLowerCase()}`}><span>Owl Agent report · {Math.round(bounty.decision.confidence * 100)}%</span><h3>{bounty.decision.decision.replaceAll('_', ' ')}</h3><p>{bounty.decision.summary}</p>{bounty.decision.blockingIssues.map((issue) => <small key={issue}>{issue}</small>)}</div>}
+        {bounty.decision && <AgentReportCard decision={bounty.decision} onOpen={() => setReportOpen(true)} />}
 
         {isAssignedDeveloper && ['ASSIGNED', 'REVISION_REQUIRED'].includes(bounty.status) && (
           <div className="detailSection submissionSection">
@@ -279,7 +295,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
         )}
 
         {isOwner && (bounty.status === 'READY_FOR_REVIEW' || (bounty.reviewPlan === 'NONE' && bounty.status === 'SUBMITTED')) && (
-          <div className="maintainerReview"><div><strong>{bounty.reviewPlan === 'NONE' ? 'Manual review' : 'Maintainer decision'}</strong><p>{bounty.reviewPlan === 'NONE' ? 'Inspect the pull request yourself, then approve payment or request a revision.' : 'Review the Owl Agent report and the pull request before approving payment.'}</p></div><div><button className="secondaryButton" onClick={() => reviewMutation.mutate('revision')} disabled={reviewMutation.isPending}>Request revision</button><button className="primaryButton" onClick={() => reviewMutation.mutate('approve')} disabled={reviewMutation.isPending}>{reviewMutation.isPending ? 'Processing…' : 'Approve & release'}</button></div></div>
+          <div className="maintainerReview"><h3>Decision</h3><div><button className="decisionButton revisionDecisionButton" onClick={() => reviewMutation.mutate('revision')} disabled={reviewMutation.isPending}>Request revision</button><button className="decisionButton approveDecisionButton" onClick={() => reviewMutation.mutate('approve')} disabled={reviewMutation.isPending}>{reviewMutation.isPending ? 'Processing…' : 'Approve & release'}</button></div></div>
         )}
         {reviewMutation.error && <p className="formError" role="alert">{reviewMutation.error.message}</p>}
         {success && <p className="formSuccess" role="status">{success}</p>}
@@ -288,9 +304,112 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
       </section>
       <AnimatePresence>
         {reviewInfo && <ReviewPackageInfoModal key={reviewInfo} plan={reviewInfo} onClose={() => setReviewInfo(null)} />}
+        {reportOpen && bounty.decision && <AgentReportModal key="agent-report" bountyId={bounty.id} criteria={bounty.criteria} decision={bounty.decision} submission={bounty.submission} onClose={() => setReportOpen(false)} />}
       </AnimatePresence>
     </div>
   );
+}
+
+type AgentDecision = NonNullable<Bounty['decision']>;
+
+function AgentReportCard({ decision, onOpen }: { decision: AgentDecision; onOpen: () => void }) {
+  const score = Math.round(decision.confidence * 100);
+  const tone = reportScoreTone(score);
+  return (
+    <article className={`agentReportCard reportTone-${tone}`}>
+      <ReportGauge score={score} />
+      <div className="agentReportSummary">
+        <span>Owl AI report</span>
+        <h3>{formatDecision(decision.decision)}</h3>
+        <small>{reportScoreLabel(score)}</small>
+      </div>
+      <button type="button" className="agentReportButton" onClick={onOpen}>View report <ArrowUpRight /></button>
+    </article>
+  );
+}
+
+function ReportGauge({ score }: { score: number }) {
+  const needleRotation = (Math.min(100, Math.max(0, score)) - 50) * 1.8;
+  return (
+    <div className="reportGauge" role="img" aria-label={`Owl AI confidence score ${score} out of 100`}>
+      <svg viewBox="0 0 200 145" aria-hidden="true">
+        <path className="reportGaugeTrack" d="M16 100 A84 84 0 0 1 184 100" pathLength="100" />
+        <path className="reportGaugeSegment gaugeRed" d="M16 100 A84 84 0 0 1 184 100" pathLength="100" strokeDasharray="29 71" />
+        <path className="reportGaugeSegment gaugeYellow" d="M16 100 A84 84 0 0 1 184 100" pathLength="100" strokeDasharray="29 71" strokeDashoffset="-31" />
+        <path className="reportGaugeSegment gaugeGreen" d="M16 100 A84 84 0 0 1 184 100" pathLength="100" strokeDasharray="38 62" strokeDashoffset="-62" />
+        <g className="reportGaugeNeedle" style={{ transform: `rotate(${needleRotation}deg)`, transformOrigin: '100px 100px' }}>
+          <line x1="100" y1="100" x2="100" y2="20" />
+          <circle className="reportGaugeTip" cx="100" cy="16" r="6" />
+        </g>
+        <circle className="reportGaugePivot" cx="100" cy="100" r="8" />
+        <text className="reportGaugeValue" x="100" y="138" textAnchor="middle"><tspan>{score}</tspan><tspan> /100</tspan></text>
+      </svg>
+    </div>
+  );
+}
+
+function AgentReportModal({ bountyId, criteria, decision, submission, onClose }: { bountyId: string; criteria: Bounty['criteria']; decision: AgentDecision; submission?: Bounty['submission']; onClose: () => void }) {
+  const score = Math.round(decision.confidence * 100);
+  const resultById = new Map((decision.criterionResults ?? []).map((result) => [result.criterionId, result]));
+  const results = [...resultById.values()];
+  const passedCount = results.filter((result) => result.status === 'PASSED').length;
+  const evidenceCount = new Set(results.flatMap((result) => result.evidence)).size;
+  const reportEvidence = useQuery({
+    queryKey: ['submission-report-evidence', bountyId, submission?.commitSha],
+    queryFn: () => owlpayApi.getSubmissionReportEvidence(bountyId),
+    enabled: Boolean(submission),
+    retry: false
+  });
+  const changedFiles = reportEvidence.data?.changedFiles ?? submission?.changedFiles;
+  const additions = reportEvidence.data?.additions ?? submission?.additions ?? 0;
+  const deletions = reportEvidence.data?.deletions ?? submission?.deletions ?? 0;
+  return (
+    <motion.div className="agentReportBackdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .18 }} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <motion.section className="agentReportModal" role="dialog" aria-modal="true" aria-labelledby="agent-report-title" initial={{ opacity: 0, y: 16, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: .98 }} transition={{ type: 'spring', stiffness: 380, damping: 31 }}>
+        <button type="button" className="iconButton agentReportClose" aria-label="Close Owl AI report" onClick={onClose}>×</button>
+        <header className="agentReportModalHeader"><span>Owl AI Agent</span><h2 id="agent-report-title">Review report</h2></header>
+        <div className="agentReportOverview">
+          <ReportGauge score={score} />
+          <div><span>Recommendation</span><strong>{formatDecision(decision.decision)}</strong><small>{reportScoreLabel(score)}</small></div>
+        </div>
+        <div className="agentReportStats">
+          <div><span>Criteria passed</span><strong>{passedCount}/{criteria.length}</strong></div>
+          <div><span>Evidence</span><strong>{evidenceCount}</strong></div>
+          <div><span>Blocking issues</span><strong>{decision.blockingIssues.length}</strong></div>
+          <div><span>{changedFiles === undefined ? 'Commit' : 'Changes reviewed'}</span><strong>{changedFiles === undefined ? reportEvidence.isLoading ? 'Loading…' : submission?.commitSha.slice(0, 8) ?? '—' : `${changedFiles} files · +${additions} −${deletions}`}</strong></div>
+        </div>
+        <section className="agentCriteriaReport" aria-labelledby="agent-criteria-title">
+          <div className="agentCriteriaHeader"><h3 id="agent-criteria-title">Criteria</h3><span>{criteria.length} checked</span></div>
+          <div className="agentCriteriaList">
+            {criteria.map((criterion) => {
+              const result = resultById.get(criterion.id);
+              const status = result?.status ?? 'UNKNOWN';
+              return <article className={`agentCriterion criterion-${status.toLowerCase()}`} key={criterion.id}><span className="agentCriterionStatus">{status === 'PASSED' ? <Check /> : status === 'FAILED' ? '!' : '?'}</span><div><strong>{criterion.description}</strong><p>{result?.summary ?? 'No conclusive evidence was returned.'}</p></div><small>{status === 'PASSED' ? 'Passed' : status === 'FAILED' ? 'Failed' : 'Needs review'}</small></article>;
+            })}
+          </div>
+        </section>
+        {decision.blockingIssues.length > 0 && <section className="agentBlockingIssues"><h3>Blocking issues</h3>{decision.blockingIssues.map((issue) => <p key={issue}>{issue}</p>)}</section>}
+      </motion.section>
+    </motion.div>
+  );
+}
+
+function reportScoreTone(score: number) {
+  if (score >= 60) return 'green';
+  if (score >= 30) return 'yellow';
+  return 'red';
+}
+
+function reportScoreLabel(score: number) {
+  if (score >= 60) return 'High confidence';
+  if (score >= 30) return 'Moderate confidence';
+  return 'Low confidence';
+}
+
+function formatDecision(decision: AgentDecision['decision']) {
+  if (decision === 'APPROVE') return 'Approve';
+  if (decision === 'REVISION_REQUIRED') return 'Revision required';
+  return 'Human review';
 }
 
 function ReviewPackageInfoModal({ plan, onClose }: { plan: 'STANDARD' | 'SECURITY'; onClose: () => void }) {
