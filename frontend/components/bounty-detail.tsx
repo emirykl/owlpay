@@ -35,6 +35,9 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const isClosed = bounty.status === 'OPEN' && deadline.closed;
   const platformFeeRate = (network.data?.platformFeeBps ?? 300) / 10_000;
   const estimatedPayout = Math.max(0, Number(bounty.rewardAmount) * (1 - platformFeeRate));
+  const deadlineLabel = isClosed
+    ? `Ended ${new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(bounty.deadline))}`
+    : deadline.label;
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -155,16 +158,16 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
 
         <div className="detailStats">
           <div><span>Reward</span><strong>{bounty.rewardAmount} otUSDC</strong></div>
-          <div><span>Applications</span><strong>{bounty.applicantCount}</strong></div>
-          <div><span>Deadline</span><strong>{deadline.label}</strong></div>
+          {!isClosed && <div><span>Applications</span><strong>{bounty.applicantCount}</strong></div>}
+          <div><span>Deadline</span><strong>{deadlineLabel}</strong></div>
         </div>
 
         <div className="detailSection">
-          <div className="detailSectionTitle"><h3>Acceptance criteria</h3><span>{bounty.criteria.length} mandatory checks</span></div>
-          <div className="criteriaList">{bounty.criteria.map((criterion) => <div key={criterion.id}><span className="criteriaIcon"><Check /></span><p><strong>{criterion.description}</strong><small>{criterion.method.replace('-', ' ')}</small></p></div>)}</div>
+          <div className="detailSectionTitle"><h3>Acceptance criteria</h3></div>
+          <div className="criteriaList">{bounty.criteria.map((criterion) => <div key={criterion.id}><span className="criteriaIcon"><Check /></span><p><strong>{criterion.description}</strong></p></div>)}</div>
         </div>
 
-        {isOwner && ['OPEN', 'ASSIGNED'].includes(bounty.status) && (
+        {isOwner && !isClosed && ['OPEN', 'ASSIGNED'].includes(bounty.status) && (
           <div className="detailSection">
             <div className="detailSectionTitle"><h3>Applications</h3><span>{applications.data?.items.length ?? 0} candidates</span></div>
             {applications.isLoading ? <div className="loadingRows"><i /><i /></div> : applications.data?.items.length === 0 ? <p className="inlineNotice">No applications yet.</p> : (
@@ -194,13 +197,13 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
           </div>
         )}
 
-        {isClosed && <div className="closedNotice"><strong>Applications closed</strong><p>This bounty reached its deadline and no longer accepts applications.</p></div>}
+        {isClosed && <div className="closedNotice"><strong>Applications closed</strong><span>The deadline has passed.</span></div>}
 
         {bounty.assignedDeveloperGithubLogin && <div className="assignedNotice"><span className="statusDot" /><p><strong>Assigned to @{bounty.assignedDeveloperGithubLogin}</strong><small>{isAssignedDeveloper ? `Estimated payout: ${estimatedPayout.toFixed(2)} otUSDC after the ${(platformFeeRate * 100).toFixed(0)}% OwlPay fee.` : 'Only the selected developer can submit work.'}</small></p></div>}
 
         {bounty.submission && <div className="submissionCard"><span>Submitted commit</span><strong>{bounty.submission.commitSha.slice(0, 10)}</strong><a href={bounty.submission.pullRequestUrl} target="_blank" rel="noreferrer">Open pull request <ArrowUpRight /></a></div>}
 
-        {isOwner && bounty.status !== 'DRAFT' && bounty.reviewPaymentStatus === 'REQUIRED' && (
+        {isOwner && !isClosed && bounty.status !== 'DRAFT' && bounty.reviewPaymentStatus === 'REQUIRED' && (
           <div className="maintainerReview"><div><strong>Complete review payment · {bounty.reviewPrice} otUSDC</strong><p>Finish the selected package now so the agent can start automatically when a PR arrives.</p></div><button className="primaryButton" onClick={() => purchaseReviewMutation.mutate()} disabled={purchaseReviewMutation.isPending}>{purchaseReviewMutation.isPending ? 'Confirming payment…' : `Pay for ${bounty.reviewPlan === 'SECURITY' ? 'security' : 'standard'} review`}</button></div>
         )}
         {isOwner && bounty.reviewPaymentStatus === 'PAID' && (
