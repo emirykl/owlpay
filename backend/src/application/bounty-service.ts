@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { parseUnits } from 'viem';
 import { DomainError } from '../domain/errors.js';
-import type { Bounty, BountyApplication, BrowserReviewPaymentOrder, CreateApplicationInput, CreateBountyInput, ReviewPlan, SubmitWorkInput, VerificationInput } from '../domain/schemas.js';
+import type { Bounty, BountyApplication, BrowserReviewPaymentOrder, CreateApplicationInput, CreateBountyInput, RequestRevisionInput, ReviewPlan, RevisionRequest, SubmitWorkInput, VerificationInput } from '../domain/schemas.js';
 import type { ApplicationRepository, BountyRepository, GitHubEvidenceProvider, PullRequestEvidence, ReviewPaymentGateway, ReviewPaymentVerifier, SettlementGateway } from './ports.js';
 import type { VerificationPolicy } from './verification-policy.js';
 import type { AuthUser } from './auth.js';
@@ -58,7 +58,8 @@ export class BountyService {
       reviewPaidAmount: '0',
       reviewPaymentStatus: input.reviewPlan === 'NONE' ? 'NOT_REQUIRED' : 'REQUIRED',
       reviewPaymentTxHashes: [],
-      reviewPaymentOrderIds: []
+      reviewPaymentOrderIds: [],
+      revisionRequests: []
     };
     await this.repository.save(bounty);
     return bounty;
@@ -368,7 +369,8 @@ export class BountyService {
     this.assertOwner(bounty, actor.id);
     const manualReviewReady = bounty.reviewPlan === 'NONE' && bounty.status === 'SUBMITTED' && bounty.submission;
     const agentReviewReady = bounty.reviewPlan !== 'NONE' && bounty.status === 'READY_FOR_REVIEW' && bounty.decision;
-    if (!manualReviewReady && !agentReviewReady) throw new DomainError('This bounty is not ready for maintainer approval', 409, 'NOT_READY_FOR_REVIEW');
+    const revisionFollowupReady = bounty.status === 'SUBMITTED' && bounty.revisionRequests.length > 0 && bounty.submission;
+    if (!manualReviewReady && !agentReviewReady && !revisionFollowupReady) throw new DomainError('This bounty is not ready for maintainer approval', 409, 'NOT_READY_FOR_REVIEW');
     const payoutTxHash = await this.settlement.approveAndRelease(
       requireOnchainId(bounty, this.settlement.writesEnabled),
       bounty.decision ? hashDecision(bounty.decision) : hashManualDecision(bounty, 'APPROVE')
@@ -380,17 +382,29 @@ export class BountyService {
     return updated;
   }
 
-  async requestRevision(id: string, actor: AuthUser) {
+  async requestRevision(id: string, actor: AuthUser, input: RequestRevisionInput) {
     const bounty = await this.get(id);
     this.assertOwner(bounty, actor.id);
     const manualReviewReady = bounty.reviewPlan === 'NONE' && bounty.status === 'SUBMITTED' && bounty.submission;
     const agentReviewReady = bounty.reviewPlan !== 'NONE' && bounty.status === 'READY_FOR_REVIEW' && bounty.decision;
-    if (!manualReviewReady && !agentReviewReady) throw new DomainError('This bounty is not ready for maintainer review', 409, 'NOT_READY_FOR_REVIEW');
+    const revisionFollowupReady = bounty.status === 'SUBMITTED' && bounty.revisionRequests.length > 0 && bounty.submission;
+    if (!manualReviewReady && !agentReviewReady && !revisionFollowupReady) throw new DomainError('This bounty is not ready for maintainer review', 409, 'NOT_READY_FOR_REVIEW');
+    const revisionRequest: RevisionRequest = {
+      id: randomUUID(),
+      message: input.message,
+      commitSha: bounty.submission!.commitSha,
+      requestedAt: new Date().toISOString(),
+      ...(actor.githubLogin ? { requestedByGithubLogin: actor.githubLogin } : {})
+    };
     await this.settlement.requestRevision(
       requireOnchainId(bounty, this.settlement.writesEnabled),
-      bounty.decision ? hashDecision(bounty.decision) : hashManualDecision(bounty, 'REVISION_REQUIRED')
+      hashRevisionRequest(bounty, revisionRequest)
     );
-    const updated: Bounty = { ...bounty, status: 'REVISION_REQUIRED' };
+    const updated: Bounty = {
+      ...bounty,
+      status: 'REVISION_REQUIRED',
+      revisionRequests: [...bounty.revisionRequests, revisionRequest]
+    };
     await this.repository.save(updated);
     return updated;
   }
@@ -491,6 +505,17 @@ function hashManualDecision(bounty: Bounty, action: 'APPROVE' | 'REVISION_REQUIR
     action,
     bountyId: bounty.id,
     commitSha: bounty.submission?.commitSha,
+    reviewedBy: bounty.ownerUserId
+  })).digest('hex')}`;
+}
+
+function hashRevisionRequest(bounty: Bounty, request: RevisionRequest): `0x${string}` {
+  return `0x${createHash('sha256').update(JSON.stringify({
+    action: 'REVISION_REQUIRED',
+    bountyId: bounty.id,
+    commitSha: request.commitSha,
+    message: request.message,
+    requestedAt: request.requestedAt,
     reviewedBy: bounty.ownerUserId
   })).digest('hex')}`;
 }

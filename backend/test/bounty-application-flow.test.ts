@@ -119,7 +119,7 @@ const reviewConfig = {
 };
 
 describe('bounty application and assignment flow', () => {
-  it('allows a free manual bounty to be approved without an agent payment or report', async () => {
+  it('stores maintainer feedback across a manual revision cycle before approval', async () => {
     const payment = createPaymentHarness();
     const service = new BountyService(
       new InMemoryBountyRepository(),
@@ -158,6 +158,22 @@ describe('bounty application and assignment flow', () => {
 
     expect(submitted.bounty.status).toBe('SUBMITTED');
     expect(submitted.bounty.decision).toBeUndefined();
+    const revision = await service.requestRevision(draft.id, owner, {
+      message: 'Add coverage for the error response and update the API documentation.'
+    });
+    expect(revision).toMatchObject({
+      status: 'REVISION_REQUIRED',
+      revisionRequests: [{
+        message: 'Add coverage for the error response and update the API documentation.',
+        commitSha: 'a'.repeat(40),
+        requestedByGithubLogin: 'maintainer'
+      }]
+    });
+    const resubmitted = await service.submit(draft.id, {
+      pullRequestUrl: 'https://github.com/owlpay/demo/pull/42',
+      developerAddress: application.developerAddress
+    }, developers[1]!);
+    expect(resubmitted.bounty).toMatchObject({ status: 'SUBMITTED', revisionRequests: revision.revisionRequests });
     expect(await service.approve(draft.id, owner)).toMatchObject({ status: 'PAID', payoutTxHash: `0x${'9'.repeat(64)}` });
   });
 
@@ -280,6 +296,13 @@ describe('bounty application and assignment flow', () => {
     const reviewed = await service.verify(draft.id, { confidence: 0.94, criterionResults: [{ criterionId: 'health', status: 'PASSED', evidence: ['CI passed'], summary: 'Endpoint and tests pass.' }], blockingIssues: [] });
     expect(reviewed).toMatchObject({ status: 'READY_FOR_REVIEW', decision: { decision: 'APPROVE' } });
     await expect(service.approve(draft.id, developers[1]!)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await service.requestRevision(draft.id, owner, { message: 'Update the pull request with one additional regression test.' });
+    const revisedSubmission = await service.submit(draft.id, {
+      pullRequestUrl: 'https://github.com/owlpay/demo/pull/42',
+      developerAddress: applications[1]!.developerAddress
+    }, developers[1]!);
+    expect(revisedSubmission.bounty.status).toBe('SUBMITTED');
+    expect(revisedSubmission.bounty.decision).toBeUndefined();
     expect(await service.approve(draft.id, owner)).toMatchObject({ status: 'PAID', payoutTxHash: `0x${'9'.repeat(64)}` });
   });
 });

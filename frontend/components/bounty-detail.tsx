@@ -27,6 +27,8 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const [applicationMessage, setApplicationMessage] = useState('');
   const [reviewInfo, setReviewInfo] = useState<'STANDARD' | 'SECURITY' | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
+  const [revisionComposerOpen, setRevisionComposerOpen] = useState(false);
+  const [revisionMessage, setRevisionMessage] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const detail = useQuery({ queryKey: ['bounty', initialBounty.id], queryFn: () => owlpayApi.getBounty(initialBounty.id), initialData: initialBounty, refetchInterval: LIVE_SYNC_INTERVAL, refetchIntervalInBackground: false });
   const identity = useQuery({ queryKey: ['identity'], queryFn: owlpayApi.me, enabled: configured && Boolean(user), retry: false });
@@ -53,21 +55,23 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const securityActive = bounty.reviewPlan === 'SECURITY' && paidReviewAmount >= securityPrice && ['PAID', 'CONSUMED'].includes(bounty.reviewPaymentStatus);
   const standardActive = !securityActive && bounty.reviewPlan === 'STANDARD' && paidReviewAmount >= standardPrice && ['PAID', 'CONSUMED'].includes(bounty.reviewPaymentStatus);
   const canUpgradeReview = isOwner && bounty.reviewPaymentStatus !== 'CONSUMED' && !['PAID', 'REFUNDED', 'CANCELLED'].includes(bounty.status);
+  const latestRevisionRequest = bounty.revisionRequests?.at(-1);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
-    if (!reviewInfo && !reportOpen) return;
+    if (!reviewInfo && !reportOpen && !revisionComposerOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       setReviewInfo(null);
       setReportOpen(false);
+      setRevisionComposerOpen(false);
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [reportOpen, reviewInfo]);
+  }, [reportOpen, reviewInfo, revisionComposerOpen]);
 
   const applyMutation = useMutation({
     mutationFn: () => {
@@ -121,7 +125,9 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
       return owlpayApi.submitWork(bounty.id, pullRequestUrl, address, submissionTxHash);
     },
     onSuccess: async (result) => {
-      setSuccess(bounty.reviewPlan === 'NONE'
+      setSuccess(bounty.status === 'REVISION_REQUIRED'
+        ? `Revision ${result.evidence.headSha.slice(0, 8)} submitted. The maintainer will review the updated pull request.`
+        : bounty.reviewPlan === 'NONE'
         ? `Commit ${result.evidence.headSha.slice(0, 8)} submitted. The maintainer will review the pull request manually.`
         : bounty.reviewPaymentStatus === 'PAID'
         ? bounty.reviewPlan === 'SECURITY'
@@ -159,8 +165,15 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
     }
   });
   const reviewMutation = useMutation({
-    mutationFn: (action: 'approve' | 'revision') => action === 'approve' ? owlpayApi.approveBounty(bounty.id) : owlpayApi.requestBountyRevision(bounty.id),
-    onSuccess: async (updated) => {
+    mutationFn: (action: { type: 'approve' } | { type: 'revision'; message: string }) => action.type === 'approve'
+      ? owlpayApi.approveBounty(bounty.id)
+      : owlpayApi.requestBountyRevision(bounty.id, action.message),
+    onSuccess: async (updated, action) => {
+      if (action.type === 'revision') {
+        setRevisionComposerOpen(false);
+        setRevisionMessage('');
+        setSuccess('Revision request sent to the assigned developer.');
+      }
       queryClient.setQueryData(['bounty', bounty.id], updated);
       await queryClient.invalidateQueries({ queryKey: ['bounties'] });
     }
@@ -286,6 +299,17 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
 
         {bounty.decision && <AgentReportCard decision={bounty.decision} onOpen={() => setReportOpen(true)} />}
 
+        {bounty.status === 'REVISION_REQUIRED' && latestRevisionRequest && (isAssignedDeveloper || isOwner) && (
+          <article className="revisionFeedbackCard">
+            <div className="revisionFeedbackHeader">
+              <span>Revision requested</span>
+              <time dateTime={latestRevisionRequest.requestedAt}>{new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(latestRevisionRequest.requestedAt))}</time>
+            </div>
+            <p>{latestRevisionRequest.message}</p>
+            <small>Requested for commit {latestRevisionRequest.commitSha.slice(0, 8)}</small>
+          </article>
+        )}
+
         {isAssignedDeveloper && ['ASSIGNED', 'REVISION_REQUIRED'].includes(bounty.status) && (
           <div className="detailSection submissionSection">
             <div className="detailSectionTitle"><h3>{bounty.status === 'REVISION_REQUIRED' ? 'Submit revision' : 'Submit your work'}</h3><span>Signed in as @{githubLogin}</span></div>
@@ -294,10 +318,10 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
           </div>
         )}
 
-        {isOwner && (bounty.status === 'READY_FOR_REVIEW' || (bounty.reviewPlan === 'NONE' && bounty.status === 'SUBMITTED')) && (
-          <div className="maintainerReview"><h3>Decision</h3><div><button className="decisionButton revisionDecisionButton" onClick={() => reviewMutation.mutate('revision')} disabled={reviewMutation.isPending}>Request revision</button><button className="decisionButton approveDecisionButton" onClick={() => reviewMutation.mutate('approve')} disabled={reviewMutation.isPending}>{reviewMutation.isPending ? 'Processing…' : 'Approve & release'}</button></div></div>
+        {isOwner && (bounty.status === 'READY_FOR_REVIEW' || (bounty.status === 'SUBMITTED' && (bounty.reviewPlan === 'NONE' || Boolean(bounty.revisionRequests?.length)))) && (
+          <div className="maintainerReview"><h3>Decision</h3><div><button className="decisionButton revisionDecisionButton" onClick={() => setRevisionComposerOpen(true)} disabled={reviewMutation.isPending}>Request revision</button><button className="decisionButton approveDecisionButton" onClick={() => reviewMutation.mutate({ type: 'approve' })} disabled={reviewMutation.isPending}>{reviewMutation.isPending ? 'Processing…' : 'Approve & release'}</button></div></div>
         )}
-        {reviewMutation.error && <p className="formError" role="alert">{reviewMutation.error.message}</p>}
+        {reviewMutation.error && !revisionComposerOpen && <p className="formError" role="alert">{reviewMutation.error.message}</p>}
         {success && <p className="formSuccess" role="status">{success}</p>}
 
         {(bounty.fundingTxHash || bounty.payoutTxHash) && <div className="detailFooter">{bounty.fundingTxHash && <a href={`${goatTestnet.blockExplorers.default.url}/tx/${bounty.fundingTxHash}`} target="_blank" rel="noreferrer">Funding transaction <ArrowUpRight /></a>}{bounty.payoutTxHash && <a href={`${goatTestnet.blockExplorers.default.url}/tx/${bounty.payoutTxHash}`} target="_blank" rel="noreferrer">Payout transaction <ArrowUpRight /></a>}</div>}
@@ -305,8 +329,28 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
       <AnimatePresence>
         {reviewInfo && <ReviewPackageInfoModal key={reviewInfo} plan={reviewInfo} onClose={() => setReviewInfo(null)} />}
         {reportOpen && bounty.decision && <AgentReportModal key="agent-report" bountyId={bounty.id} criteria={bounty.criteria} decision={bounty.decision} submission={bounty.submission} onClose={() => setReportOpen(false)} />}
+        {revisionComposerOpen && <RevisionRequestModal key="revision-request" value={revisionMessage} pending={reviewMutation.isPending} error={reviewMutation.error?.message} onChange={setRevisionMessage} onClose={() => setRevisionComposerOpen(false)} onSubmit={() => reviewMutation.mutate({ type: 'revision', message: revisionMessage.trim() })} />}
       </AnimatePresence>
     </div>
+  );
+}
+
+function RevisionRequestModal({ value, pending, error, onChange, onClose, onSubmit }: { value: string; pending: boolean; error?: string; onChange: (value: string) => void; onClose: () => void; onSubmit: () => void }) {
+  const trimmedLength = value.trim().length;
+  return (
+    <motion.div className="reviewInfoBackdrop revisionRequestBackdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={(event) => event.target === event.currentTarget && !pending && onClose()}>
+      <motion.form className="reviewInfoModal revisionRequestModal" role="dialog" aria-modal="true" aria-labelledby="revision-request-title" initial={{ opacity: 0, y: 18, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .98 }} transition={{ type: 'spring', stiffness: 380, damping: 31 }} onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
+        <button type="button" className="iconButton revisionRequestClose" aria-label="Close revision request" onClick={onClose} disabled={pending}>×</button>
+        <span className="revisionRequestEyebrow">Maintainer decision</span>
+        <h2 id="revision-request-title">What needs revision?</h2>
+        <p>Give the developer clear, actionable changes to make before submitting the pull request again.</p>
+        <label htmlFor="revision-message">Revision notes</label>
+        <textarea id="revision-message" autoFocus rows={7} minLength={10} maxLength={2000} required value={value} onChange={(event) => onChange(event.target.value)} placeholder="Example: Add coverage for the error case and update the API response documentation." />
+        <div className="revisionRequestMeta"><small>{value.length}/2000 · minimum 10 characters</small></div>
+        {error && <p className="formError" role="alert">{error}</p>}
+        <div className="revisionRequestActions"><button type="button" className="secondaryButton" onClick={onClose} disabled={pending}>Cancel</button><button type="submit" className="decisionButton revisionDecisionButton" disabled={pending || trimmedLength < 10}>{pending ? 'Sending…' : 'Send revision request'}</button></div>
+      </motion.form>
+    </motion.div>
   );
 }
 

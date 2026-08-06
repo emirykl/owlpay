@@ -51,6 +51,10 @@ export const submitWorkSchema = z.object({
   submissionTxHash: bytes32Schema.optional()
 });
 
+export const requestRevisionSchema = z.object({
+  message: z.string().trim().min(10).max(2000)
+});
+
 export const applicationStatusSchema = z.enum(['PENDING', 'ACCEPTED', 'REJECTED', 'WITHDRAWN']);
 
 export const createApplicationSchema = z.object({
@@ -76,6 +80,7 @@ export type Criterion = z.infer<typeof criterionSchema>;
 export type BountyStatus = z.infer<typeof bountyStatusSchema>;
 export type CreateBountyInput = z.infer<typeof createBountySchema>;
 export type SubmitWorkInput = z.infer<typeof submitWorkSchema>;
+export type RequestRevisionInput = z.infer<typeof requestRevisionSchema>;
 export type VerificationInput = z.infer<typeof verificationInputSchema>;
 export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
@@ -134,6 +139,14 @@ export interface AgentDecision {
   decidedAt: string;
 }
 
+export interface RevisionRequest {
+  id: string;
+  message: string;
+  commitSha: string;
+  requestedAt: string;
+  requestedByGithubLogin?: string;
+}
+
 export interface Bounty extends CreateBountyInput {
   id: string;
   ownerUserId?: string;
@@ -164,6 +177,7 @@ export interface Bounty extends CreateBountyInput {
   reviewPaymentPendingTxHash?: string;
   reviewPaidAt?: string;
   reviewConsumedAt?: string;
+  revisionRequests: RevisionRequest[];
   submission?: Submission;
   decision?: AgentDecision;
 }

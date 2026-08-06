@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BountyRepository } from '../application/ports.js';
-import type { AgentDecision, Bounty, BountyStatus, BrowserReviewPaymentOrder, Criterion, FlowOrderStatus, ReviewPaymentStatus, ReviewPlan, Submission } from '../domain/schemas.js';
+import type { AgentDecision, Bounty, BountyStatus, BrowserReviewPaymentOrder, Criterion, FlowOrderStatus, ReviewPaymentStatus, ReviewPlan, RevisionRequest, Submission } from '../domain/schemas.js';
 
 interface BountyRow {
   id: string;
@@ -28,6 +28,7 @@ interface BountyRow {
   review_payment_pending_tx_hash: string | null;
   review_paid_at: string | null;
   review_consumed_at: string | null;
+  revision_requests: RevisionRequest[] | null;
   deadline: string;
   criteria: Criterion[];
   status: BountyStatus;
@@ -79,6 +80,7 @@ function fromRow(row: BountyRow): Bounty {
     reviewPaymentStatus: row.review_payment_status ?? 'REQUIRED',
     reviewPaymentTxHashes: row.review_payment_tx_hashes ?? (row.review_payment_tx_hash ? [row.review_payment_tx_hash] : []),
     reviewPaymentOrderIds: row.review_payment_order_ids ?? (row.review_payment_order_id ? [row.review_payment_order_id] : []),
+    revisionRequests: row.revision_requests ?? [],
     deadline: new Date(row.deadline).toISOString(),
     criteria: row.criteria,
     status: row.status,
@@ -137,6 +139,7 @@ function toRow(bounty: Bounty) {
     review_payment_pending_tx_hash: bounty.reviewPaymentPendingTxHash ?? null,
     review_paid_at: bounty.reviewPaidAt ?? null,
     review_consumed_at: bounty.reviewConsumedAt ?? null,
+    revision_requests: bounty.revisionRequests,
     deadline: bounty.deadline,
     criteria: bounty.criteria,
     status: bounty.status,

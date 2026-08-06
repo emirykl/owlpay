@@ -29,6 +29,13 @@ export interface Bounty {
   reviewPaymentPendingTxHash?: string;
   reviewPaidAt?: string;
   reviewConsumedAt?: string;
+  revisionRequests?: Array<{
+    id: string;
+    message: string;
+    commitSha: string;
+    requestedAt: string;
+    requestedByGithubLogin?: string;
+  }>;
   deadline: string;
   criteria: Criterion[];
   status: BountyStatus;
@@ -153,7 +160,7 @@ export function formatApiError(body: ApiErrorBody, status: number) {
 }
 
 async function api<T>(path: string, init?: RequestInit, githubAccess = false): Promise<T> {
-  const headers = await authenticatedHeaders(githubAccess);
+  const headers = await authenticatedHeaders(githubAccess, typeof init?.body === 'string');
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: { ...headers, ...init?.headers }
@@ -165,14 +172,14 @@ async function api<T>(path: string, init?: RequestInit, githubAccess = false): P
   return response.json() as Promise<T>;
 }
 
-async function authenticatedHeaders(githubAccess = false) {
+async function authenticatedHeaders(githubAccess = false, jsonBody = false) {
   const { getGitHubProviderToken, getSupabaseBrowserClient } = await import('./supabase');
   const client = getSupabaseBrowserClient();
   const session = client ? (await client.auth.getSession()).data.session : null;
   const token = session?.access_token;
   const githubToken = session?.provider_token ?? getGitHubProviderToken();
   return {
-    'Content-Type': 'application/json',
+    ...(jsonBody ? { 'Content-Type': 'application/json' } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(githubAccess && githubToken ? { 'X-GitHub-Token': githubToken } : {})
   };
@@ -217,7 +224,7 @@ export const owlpayApi = {
     }),
   requestReviewPayment: async (id: string, targetPlan?: 'STANDARD' | 'SECURITY') => {
     const response = await fetch(`${API_URL}/api/bounties/${id}/review-payment`, {
-      method: 'POST', headers: await authenticatedHeaders(), body: JSON.stringify({ targetPlan })
+      method: 'POST', headers: await authenticatedHeaders(false, true), body: JSON.stringify({ targetPlan })
     });
     const body = await response.json().catch(() => ({ message: 'Payment order could not be created' })) as ReviewPaymentOrder & { message?: string };
     if (response.status !== 402) throw new Error(body.message ?? `Request failed (${response.status})`);
@@ -228,5 +235,7 @@ export const owlpayApi = {
   }),
   runReview: (id: string) => api<Bounty>(`/api/bounties/${id}/review/run`, { method: 'POST' }),
   approveBounty: (id: string) => api<Bounty>(`/api/bounties/${id}/approve`, { method: 'POST' }),
-  requestBountyRevision: (id: string) => api<Bounty>(`/api/bounties/${id}/request-revision`, { method: 'POST' })
+  requestBountyRevision: (id: string, message: string) => api<Bounty>(`/api/bounties/${id}/request-revision`, {
+    method: 'POST', body: JSON.stringify({ message })
+  })
 };
