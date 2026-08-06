@@ -491,6 +491,23 @@ a { color: inherit; text-decoration: none; }
 .revisionDecisionButton:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(180,105,0,.12); }
 .approveDecisionButton { background: var(--green); color: white; }
 .approveDecisionButton:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(36,92,68,.2); }
+.revisionFeedbackCard { margin-top: 20px; padding: 20px; border: 1px solid rgba(192,119,10,.2); border-radius: 18px; background: #fff8e9; box-shadow: 0 8px 24px rgba(133,80,0,.05); }
+.revisionFeedbackHeader { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.revisionFeedbackHeader span { color: #8a5200; font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.revisionFeedbackHeader time,.revisionFeedbackCard > small { color: var(--muted); font-size: 10px; }
+.revisionFeedbackCard > p { margin: 14px 0 12px; font-size: 15px; line-height: 1.65; white-space: pre-wrap; }
+.revisionRequestModal { width: min(600px,100%); display: grid; gap: 12px; }
+.revisionRequestClose { position: absolute; top: 20px; right: 20px; }
+.revisionRequestEyebrow { color: #8a5200; font-size: 10px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.revisionRequestModal h2 { max-width: calc(100% - 54px); margin: 2px 0 0; font-size: 30px; letter-spacing: -.045em; }
+.revisionRequestModal > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.revisionRequestModal label { margin-top: 4px; font-size: 12px; font-weight: 750; }
+.revisionRequestModal textarea { width: 100%; resize: vertical; min-height: 150px; padding: 15px; border: 1px solid var(--line); border-radius: 15px; background: white; color: var(--ink); line-height: 1.55; outline: none; }
+.revisionRequestModal textarea:focus { border-color: #d0922f; box-shadow: 0 0 0 4px rgba(208,146,47,.12); }
+.revisionRequestMeta { display: flex; justify-content: flex-end; }
+.revisionRequestMeta small { color: var(--muted); font-size: 10px; }
+.revisionRequestActions { margin-top: 8px; display: flex; justify-content: flex-end; gap: 10px; }
+.revisionRequestActions .decisionButton { min-height: 42px; }
 .reviewUpgradeSection { margin-top: 20px; padding: 24px; position: relative; border: 1px solid rgba(18,19,15,.1); border-radius: 22px; background: #fff; box-shadow: 0 10px 30px rgba(18,19,15,.035); }
 .reviewUpgradeHeading { margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .reviewUpgradeHeading h3 { margin: 0; font-size: 20px; letter-spacing: -.03em; }
@@ -794,6 +811,9 @@ a { color: inherit; text-decoration: none; }
   .reviewInfoBackdrop { padding: 16px; place-items: center; }
   .reviewInfoModal { padding: 24px 20px; border-radius: 23px; }
   .reviewInfoClose { top: 14px; right: 14px; }
+  .revisionRequestClose { top: 14px; right: 14px; }
+  .revisionRequestActions { align-items: stretch; flex-direction: column-reverse; }
+  .revisionRequestActions button { width: 100%; }
   .reviewInfoHero { margin-top: 20px; }
   .reviewInfoHero h3 { font-size: 28px; }
   .agentReportCard { grid-template-columns: 124px minmax(0,1fr); gap: 14px; padding: 16px; }
