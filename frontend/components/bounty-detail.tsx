@@ -334,9 +334,9 @@ function ReportGauge({ score }: { score: number }) {
     <div className="reportGauge" role="img" aria-label={`Owl AI confidence score ${score} out of 100`}>
       <svg viewBox="0 0 200 145" aria-hidden="true">
         <path className="reportGaugeTrack" d="M16 100 A84 84 0 0 1 184 100" pathLength="100" />
-        <path className="reportGaugeSegment gaugeRed" d="M16 100 A84 84 0 0 1 184 100" pathLength="100" strokeDasharray="29 71" />
-        <path className="reportGaugeSegment gaugeYellow" d="M16 100 A84 84 0 0 1 184 100" pathLength="100" strokeDasharray="29 71" strokeDashoffset="-31" />
-        <path className="reportGaugeSegment gaugeGreen" d="M16 100 A84 84 0 0 1 184 100" pathLength="100" strokeDasharray="38 62" strokeDashoffset="-62" />
+        <path className="reportGaugeSegment gaugeRed" d="M16 100 A84 84 0 0 1 50.63 32.04" />
+        <path className="reportGaugeSegment gaugeYellow" d="M50.63 32.04 A84 84 0 0 1 125.96 20.11" />
+        <path className="reportGaugeSegment gaugeGreen" d="M125.96 20.11 A84 84 0 0 1 184 100" />
         <g className="reportGaugeNeedle" style={{ transform: `rotate(${needleRotation}deg)`, transformOrigin: '100px 100px' }}>
           <line x1="100" y1="100" x2="100" y2="20" />
           <circle className="reportGaugeTip" cx="100" cy="16" r="6" />
