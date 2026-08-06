@@ -293,10 +293,16 @@ function ReviewPackageInfoModal({ plan, onClose }: { plan: 'STANDARD' | 'SECURIT
     <motion.div className="reviewInfoBackdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .18 }} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <motion.section className={`reviewInfoModal ${isSecurity ? 'securityReviewInfoModal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="review-info-title" initial={{ opacity: 0, y: 16, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: .98 }} transition={{ type: 'spring', stiffness: 380, damping: 31 }}>
         <button type="button" className="iconButton reviewInfoClose" aria-label="Close review details" onClick={onClose}>×</button>
-        <span className="reviewInfoEyebrow">Owl Agent</span>
+        <span className="reviewInfoEyebrow">Owl AI Agent</span>
         <div className="reviewInfoHero">
           <span className="reviewPackageLogo"><ReviewOwlLogo tone={isSecurity ? 'security' : 'standard'} /></span>
-          <h3 id="review-info-title">{isSecurity ? 'Security review' : 'Standard review'}</h3>
+          <div className="reviewInfoHeroCopy">
+            <span className={`reviewAiBadge ${isSecurity ? 'security' : 'standard'}`}>AI-powered</span>
+            <h3 id="review-info-title">{isSecurity ? 'Security review' : 'Standard review'}</h3>
+            <p>{isSecurity
+              ? 'Performed automatically by OwlPay’s specialized security AI agent with deeper code and risk analysis.'
+              : 'Performed automatically by OwlPay’s dedicated AI agent using repository evidence and CI signals.'}</p>
+          </div>
         </div>
         <div className="reviewInfoChecks">{checks.map((check, index) => <div key={check}><span>{index + 1}</span><strong>{check}</strong></div>)}</div>
       </motion.section>
