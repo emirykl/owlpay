@@ -56,8 +56,21 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
   const [exploreRepository, setExploreRepository] = useState('');
   const [exploreSort, setExploreSort] = useState<ExploreSort>('RECENT');
   const [now, setNow] = useState(() => Date.now());
-  const bounties = useQuery({ queryKey: ['bounties'], queryFn: owlpayApi.listBounties, refetchInterval: LIVE_SYNC_INTERVAL, refetchIntervalInBackground: false, retry: 1 });
-  const myApplications = useQuery({ queryKey: ['my-applications', userId], queryFn: owlpayApi.listMyApplications, enabled: view === 'applications' && Boolean(userId), refetchInterval: LIVE_SYNC_INTERVAL, refetchIntervalInBackground: false, retry: false });
+  const bounties = useQuery({
+    queryKey: ['bounties'],
+    queryFn: owlpayApi.listBounties,
+    refetchInterval: view !== 'applications' && !creating && !selectedBounty ? LIVE_SYNC_INTERVAL : false,
+    refetchIntervalInBackground: false,
+    retry: 1
+  });
+  const myApplications = useQuery({
+    queryKey: ['my-applications', userId],
+    queryFn: owlpayApi.listMyApplications,
+    enabled: view === 'applications' && Boolean(userId),
+    refetchInterval: !creating && !selectedBounty ? LIVE_SYNC_INTERVAL : false,
+    refetchIntervalInBackground: false,
+    retry: false
+  });
   const network = useQuery({ queryKey: ['network'], queryFn: owlpayApi.network, refetchInterval: 30_000, retry: 1 });
   const items = useMemo(() => bounties.data?.items ?? [], [bounties.data?.items]);
   const publicItems = useMemo(() => items.filter((item) => item.status !== 'DRAFT'), [items]);
