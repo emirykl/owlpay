@@ -4,6 +4,7 @@ export const owlPayAbi = parseAbi([
   'function createBounty(uint128 rewardAmount, uint64 deadline, bytes32 taskHash) returns (uint256 bountyId)',
   'function assignDeveloper(uint256 bountyId, address developer)',
   'function submitWork(uint256 bountyId, bytes32 submissionHash)',
+  'function refundExpiredBounty(uint256 bountyId)',
   'event BountyCreated(uint256 indexed bountyId, address indexed owner, address indexed paymentToken, uint256 rewardAmount, uint256 deadline, bytes32 taskHash)'
 ]);
 

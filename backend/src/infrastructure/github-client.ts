@@ -50,7 +50,7 @@ export class GitHubClient implements GitHubEvidenceProvider {
     }
 
     const payload = await response.json() as {
-      state: string; head: { sha: string }; changed_files: number; additions: number; deletions: number;
+      state: string; merged: boolean; head: { sha: string }; changed_files: number; additions: number; deletions: number;
       user: { id: number; login: string }; title: string; body: string | null;
     };
     return {
@@ -58,6 +58,7 @@ export class GitHubClient implements GitHubEvidenceProvider {
       pullRequestUrl: url,
       number: Number(number),
       state: payload.state,
+      merged: payload.merged,
       headSha: payload.head.sha,
       changedFiles: payload.changed_files,
       additions: payload.additions,

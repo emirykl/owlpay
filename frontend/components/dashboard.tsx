@@ -207,9 +207,14 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
 
 function MyApplicationCard({ application, bounty, now, onOpen, reduceMotion }: { application: BountyApplication; bounty: Bounty; now: number; onOpen: () => void; reduceMotion: boolean | null }) {
   const repository = repositoryMeta(bounty.repositoryUrl);
-  const deadline = getBountyDeadlineState(bounty.deadline, now);
   const needsRevision = bounty.status === 'REVISION_REQUIRED';
   const latestRevisionRequest = bounty.revisionRequests?.at(-1);
+  const awaitingMaintainer = ['SUBMITTED', 'READY_FOR_REVIEW', 'HUMAN_REVIEW'].includes(bounty.status);
+  const activeDeadlineValue = needsRevision || bounty.status === 'ASSIGNED'
+    ? bounty.contributorDeadline ?? bounty.deadline
+    : awaitingMaintainer ? bounty.maintainerReviewDeadline ?? bounty.deadline : bounty.deadline;
+  const deadline = getBountyDeadlineState(activeDeadlineValue, now);
+  const deadlineTitle = needsRevision ? 'Revision due' : awaitingMaintainer ? 'Review by' : 'Deadline';
 
   return (
     <motion.button className={`myApplicationCard ${needsRevision ? 'revisionRequiredCard' : ''}`} onClick={onOpen} whileHover={reduceMotion ? undefined : { y: -3 }} whileTap={{ scale: .995 }}>
@@ -224,7 +229,7 @@ function MyApplicationCard({ application, bounty, now, onOpen, reduceMotion }: {
       <div className="myApplicationCardFooter">
         <div><span>Reward</span><strong>{bounty.rewardAmount} USDC</strong></div>
         <div><span>Bounty</span><strong>{statusLabels[bounty.status]}</strong></div>
-        <div><span>Deadline</span><strong>{deadline.closed ? 'Deadline ended' : deadline.label}</strong></div>
+        <div><span>{deadlineTitle}</span><strong>{deadline.closed ? 'Deadline ended' : deadline.label}</strong></div>
         <ArrowUpRight />
       </div>
     </motion.button>

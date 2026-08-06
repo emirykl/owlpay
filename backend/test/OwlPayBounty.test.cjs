@@ -74,6 +74,66 @@ describe('OwlPayBounty', function () {
     const deadline = Math.floor(Date.now() / 1000) + 3600;
     await expect(fixture.contract.connect(fixture.owner).createBounty(20_000_000n, deadline, ethers.id('task'))).to.be.reverted;
   });
+
+  it('keeps one fixed seven-day maintainer window and allows at most two revisions', async function () {
+    const fixture = await deployFixture();
+    const latest = await ethers.provider.getBlock('latest');
+    const deadline = Number(latest.timestamp) + 3600;
+    await fixture.contract.connect(fixture.owner).createBounty(20_000_000n, deadline, ethers.id('task'));
+    await fixture.contract.connect(fixture.owner).assignDeveloper(1, fixture.developer.address);
+    await fixture.contract.connect(fixture.developer).submitWork(1, ethers.id('submission-1'));
+
+    await fixture.contract.connect(fixture.settlement).requestRevision(1, ethers.id('revision-1'));
+    const afterFirst = await fixture.contract.getBounty(1);
+    expect(afterFirst.maintainerReviewDeadline).to.equal(BigInt(deadline + 7 * 24 * 60 * 60));
+    expect(afterFirst.revisionCount).to.equal(1);
+    expect(afterFirst.revisionExtensionUsed).to.equal(true);
+
+    await fixture.contract.connect(fixture.developer).submitWork(1, ethers.id('submission-2'));
+    await fixture.contract.connect(fixture.settlement).requestRevision(1, ethers.id('revision-2'));
+    const afterSecond = await fixture.contract.getBounty(1);
+    expect(afterSecond.maintainerReviewDeadline).to.equal(afterFirst.maintainerReviewDeadline);
+    expect(afterSecond.revisionCount).to.equal(2);
+
+    await fixture.contract.connect(fixture.developer).submitWork(1, ethers.id('submission-3'));
+    await expect(fixture.contract.connect(fixture.settlement).requestRevision(1, ethers.id('revision-3')))
+      .to.be.revertedWithCustomError(fixture.contract, 'MaximumRevisionsReached');
+  });
+
+  it('refunds a missed contributor delivery but protects a timely submitted pull request', async function () {
+    const fixture = await deployFixture();
+    const latest = await ethers.provider.getBlock('latest');
+    const deadline = Number(latest.timestamp) + 3600;
+    await fixture.contract.connect(fixture.owner).createBounty(20_000_000n, deadline, ethers.id('missed'));
+    await fixture.contract.connect(fixture.owner).assignDeveloper(1, fixture.developer.address);
+    await fixture.contract.connect(fixture.owner).createBounty(20_000_000n, deadline, ethers.id('submitted'));
+    await fixture.contract.connect(fixture.owner).assignDeveloper(2, fixture.developer.address);
+    await fixture.contract.connect(fixture.developer).submitWork(2, ethers.id('on-time'));
+    await ethers.provider.send('evm_setNextBlockTimestamp', [deadline + 1]);
+    await ethers.provider.send('evm_mine');
+
+    await expect(fixture.contract.connect(fixture.owner).refundExpiredBounty(1))
+      .to.emit(fixture.contract, 'BountyRefunded');
+    await expect(fixture.contract.connect(fixture.owner).refundExpiredBounty(2))
+      .to.be.revertedWithCustomError(fixture.contract, 'InvalidState');
+  });
+
+  it('lets only settlement resolve an unanswered review after the fixed deadline', async function () {
+    const fixture = await deployFixture();
+    const latest = await ethers.provider.getBlock('latest');
+    const deadline = Number(latest.timestamp) + 3600;
+    await fixture.contract.connect(fixture.owner).createBounty(20_000_000n, deadline, ethers.id('task'));
+    await fixture.contract.connect(fixture.owner).assignDeveloper(1, fixture.developer.address);
+    await fixture.contract.connect(fixture.developer).submitWork(1, ethers.id('submission'));
+    const reviewDeadline = deadline + 7 * 24 * 60 * 60;
+    await ethers.provider.send('evm_setNextBlockTimestamp', [reviewDeadline + 1]);
+    await ethers.provider.send('evm_mine');
+
+    await expect(fixture.contract.connect(fixture.outsider).resolveReviewTimeout(1, ethers.id('timeout'), true)).to.be.reverted;
+    await fixture.contract.connect(fixture.settlement).resolveReviewTimeout(1, ethers.id('timeout'), true);
+    await expect(fixture.contract.connect(fixture.settlement).releasePayment(1))
+      .to.changeTokenBalance(fixture.token, fixture.developer, 19_400_000n);
+  });
 });
 
 describe('OwlPayTestUSDC', function () {

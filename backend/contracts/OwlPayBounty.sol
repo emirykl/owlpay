@@ -14,6 +14,9 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
     bytes32 public constant SETTLEMENT_ROLE = keccak256("SETTLEMENT_ROLE");
     uint16 public constant BPS_DENOMINATOR = 10_000;
     uint16 public constant MAX_PLATFORM_FEE_BPS = 500;
+    uint64 public constant MAINTAINER_REVIEW_PERIOD = 7 days;
+    uint64 public constant REVISION_RESPONSE_PERIOD = 2 days;
+    uint8 public constant MAX_REVISIONS = 2;
 
     enum Status {
         None,
@@ -33,6 +36,10 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
         address developer;
         uint128 rewardAmount;
         uint64 deadline;
+        uint64 contributorDeadline;
+        uint64 maintainerReviewDeadline;
+        uint8 revisionCount;
+        bool revisionExtensionUsed;
         bytes32 taskHash;
         bytes32 submissionHash;
         bytes32 verificationHash;
@@ -58,6 +65,7 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
     event DeveloperAssigned(uint256 indexed bountyId, address indexed developer);
     event WorkSubmitted(uint256 indexed bountyId, address indexed developer, bytes32 indexed submissionHash);
     event RevisionRequested(uint256 indexed bountyId, bytes32 indexed verificationHash);
+    event ContributorDeadlineExtended(uint256 indexed bountyId, uint256 contributorDeadline);
     event HumanReviewRequested(uint256 indexed bountyId, bytes32 indexed verificationHash);
     event SubmissionApproved(uint256 indexed bountyId, bytes32 indexed verificationHash);
     event PaymentReleased(
@@ -68,6 +76,7 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
         uint256 developerPayout
     );
     event BountyRefunded(uint256 indexed bountyId, address indexed owner, uint256 amount);
+    event ReviewTimeoutResolved(uint256 indexed bountyId, bool approved, bytes32 indexed verificationHash);
     event BountyCancelled(uint256 indexed bountyId, address indexed owner, uint256 amount);
 
     error InvalidAmount();
@@ -79,6 +88,9 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
     error DeadlinePassed();
     error DeadlineNotPassed();
     error SubmissionAlreadyUsed();
+    error MaximumRevisionsReached();
+    error ReviewDeadlinePassed();
+    error ReviewWindowTooShort();
 
     constructor(
         address admin,
@@ -115,6 +127,10 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
             developer: address(0),
             rewardAmount: rewardAmount,
             deadline: deadline,
+            contributorDeadline: deadline,
+            maintainerReviewDeadline: deadline + MAINTAINER_REVIEW_PERIOD,
+            revisionCount: 0,
+            revisionExtensionUsed: false,
             taskHash: taskHash,
             submissionHash: bytes32(0),
             verificationHash: bytes32(0),
@@ -138,7 +154,7 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
     function submitWork(uint256 bountyId, bytes32 submissionHash) external whenNotPaused {
         Bounty storage bounty = _requireBounty(bountyId);
         if (bounty.status != Status.Assigned && bounty.status != Status.RevisionRequired) revert InvalidState(bounty.status);
-        if (block.timestamp > bounty.deadline) revert DeadlinePassed();
+        if (block.timestamp > bounty.contributorDeadline) revert DeadlinePassed();
         if (submissionHash == bytes32(0)) revert InvalidAmount();
         if (usedSubmissionHashes[submissionHash]) revert SubmissionAlreadyUsed();
         if (bounty.developer != msg.sender) revert InvalidAddress();
@@ -153,6 +169,17 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
     function requestRevision(uint256 bountyId, bytes32 verificationHash) external onlyRole(SETTLEMENT_ROLE) {
         Bounty storage bounty = _requireSubmitted(bountyId);
         if (verificationHash == bytes32(0)) revert InvalidAmount();
+        if (bounty.revisionCount >= MAX_REVISIONS) revert MaximumRevisionsReached();
+        if (block.timestamp + REVISION_RESPONSE_PERIOD > bounty.maintainerReviewDeadline) {
+            revert ReviewWindowTooShort();
+        }
+        if (bounty.revisionExtensionUsed && block.timestamp >= bounty.contributorDeadline) revert DeadlinePassed();
+        if (!bounty.revisionExtensionUsed && bounty.contributorDeadline < block.timestamp + REVISION_RESPONSE_PERIOD) {
+            bounty.contributorDeadline = uint64(block.timestamp + REVISION_RESPONSE_PERIOD);
+            bounty.revisionExtensionUsed = true;
+            emit ContributorDeadlineExtended(bountyId, bounty.contributorDeadline);
+        }
+        bounty.revisionCount += 1;
         bounty.verificationHash = verificationHash;
         bounty.status = Status.RevisionRequired;
         emit RevisionRequested(bountyId, verificationHash);
@@ -169,6 +196,7 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
     function approveSubmission(uint256 bountyId, bytes32 verificationHash) external onlyRole(SETTLEMENT_ROLE) {
         Bounty storage bounty = _requireSubmitted(bountyId);
         if (verificationHash == bytes32(0)) revert InvalidAmount();
+        if (block.timestamp > bounty.maintainerReviewDeadline) revert ReviewDeadlinePassed();
         bounty.verificationHash = verificationHash;
         bounty.status = Status.Approved;
         emit SubmissionApproved(bountyId, verificationHash);
@@ -189,14 +217,34 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
         emit PaymentReleased(bountyId, developer, grossReward, platformFee, developerPayout);
     }
 
+    function resolveReviewTimeout(uint256 bountyId, bytes32 verificationHash, bool approve)
+        external
+        onlyRole(SETTLEMENT_ROLE)
+        whenNotPaused
+        nonReentrant
+    {
+        Bounty storage bounty = _requireSubmitted(bountyId);
+        if (verificationHash == bytes32(0)) revert InvalidAmount();
+        if (block.timestamp <= bounty.maintainerReviewDeadline) revert DeadlineNotPassed();
+        bounty.verificationHash = verificationHash;
+        if (approve) {
+            bounty.status = Status.Approved;
+            emit SubmissionApproved(bountyId, verificationHash);
+        } else {
+            bounty.status = Status.Refunded;
+            paymentToken.safeTransfer(bounty.owner, bounty.rewardAmount);
+            emit BountyRefunded(bountyId, bounty.owner, bounty.rewardAmount);
+        }
+        emit ReviewTimeoutResolved(bountyId, approve, verificationHash);
+    }
+
     function refundExpiredBounty(uint256 bountyId) external whenNotPaused nonReentrant {
         Bounty storage bounty = _requireBounty(bountyId);
         if (msg.sender != bounty.owner) revert NotBountyOwner();
-        if (block.timestamp <= bounty.deadline) revert DeadlineNotPassed();
-        if (
-            bounty.status == Status.Approved || bounty.status == Status.Paid || bounty.status == Status.Refunded
-                || bounty.status == Status.Cancelled
-        ) revert InvalidState(bounty.status);
+        if (block.timestamp <= bounty.contributorDeadline) revert DeadlineNotPassed();
+        if (bounty.status != Status.Open && bounty.status != Status.Assigned && bounty.status != Status.RevisionRequired) {
+            revert InvalidState(bounty.status);
+        }
         bounty.status = Status.Refunded;
         paymentToken.safeTransfer(bounty.owner, bounty.rewardAmount);
         emit BountyRefunded(bountyId, bounty.owner, bounty.rewardAmount);

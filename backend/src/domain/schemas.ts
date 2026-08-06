@@ -55,6 +55,10 @@ export const requestRevisionSchema = z.object({
   message: z.string().trim().min(10).max(2000)
 });
 
+export const appealResolutionSchema = z.object({
+  message: z.string().trim().min(20).max(2000)
+});
+
 export const applicationStatusSchema = z.enum(['PENDING', 'ACCEPTED', 'REJECTED', 'WITHDRAWN']);
 
 export const createApplicationSchema = z.object({
@@ -145,7 +149,11 @@ export interface RevisionRequest {
   commitSha: string;
   requestedAt: string;
   requestedByGithubLogin?: string;
+  extensionGranted?: boolean;
+  contributorDeadline?: string;
 }
+
+export type TimeoutResolution = 'NONE' | 'AUTO_APPROVED' | 'AUTO_FAILED_PENDING' | 'INCONCLUSIVE' | 'DISPUTED' | 'AUTO_REFUNDED';
 
 export interface Bounty extends CreateBountyInput {
   id: string;
@@ -155,6 +163,7 @@ export interface Bounty extends CreateBountyInput {
   onchainId?: string;
   fundingTxHash?: string;
   payoutTxHash?: string;
+  refundTxHash?: string;
   assignedDeveloperUserId?: string;
   assignedDeveloperGithubLogin?: string;
   assignedDeveloperAddress?: string;
@@ -178,6 +187,13 @@ export interface Bounty extends CreateBountyInput {
   reviewPaidAt?: string;
   reviewConsumedAt?: string;
   revisionRequests: RevisionRequest[];
+  contributorDeadline: string;
+  maintainerReviewDeadline: string;
+  revisionExtensionUsed: boolean;
+  timeoutResolution: TimeoutResolution;
+  timeoutResolvedAt?: string;
+  appealDeadline?: string;
+  appealMessage?: string;
   submission?: Submission;
   decision?: AgentDecision;
 }

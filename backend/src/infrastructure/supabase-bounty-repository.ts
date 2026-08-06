@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BountyRepository } from '../application/ports.js';
-import type { AgentDecision, Bounty, BountyStatus, BrowserReviewPaymentOrder, Criterion, FlowOrderStatus, ReviewPaymentStatus, ReviewPlan, RevisionRequest, Submission } from '../domain/schemas.js';
+import type { AgentDecision, Bounty, BountyStatus, BrowserReviewPaymentOrder, Criterion, FlowOrderStatus, ReviewPaymentStatus, ReviewPlan, RevisionRequest, Submission, TimeoutResolution } from '../domain/schemas.js';
 
 interface BountyRow {
   id: string;
@@ -29,12 +29,20 @@ interface BountyRow {
   review_paid_at: string | null;
   review_consumed_at: string | null;
   revision_requests: RevisionRequest[] | null;
+  contributor_deadline: string | null;
+  maintainer_review_deadline: string | null;
+  revision_extension_used: boolean | null;
+  timeout_resolution: TimeoutResolution | null;
+  timeout_resolved_at: string | null;
+  appeal_deadline: string | null;
+  appeal_message: string | null;
   deadline: string;
   criteria: Criterion[];
   status: BountyStatus;
   onchain_id: string | null;
   funding_tx_hash: string | null;
   payout_tx_hash: string | null;
+  refund_tx_hash: string | null;
   assigned_developer_user_id: string | null;
   assigned_developer_github_login: string | null;
   assigned_developer_address: string | null;
@@ -81,6 +89,10 @@ function fromRow(row: BountyRow): Bounty {
     reviewPaymentTxHashes: row.review_payment_tx_hashes ?? (row.review_payment_tx_hash ? [row.review_payment_tx_hash] : []),
     reviewPaymentOrderIds: row.review_payment_order_ids ?? (row.review_payment_order_id ? [row.review_payment_order_id] : []),
     revisionRequests: row.revision_requests ?? [],
+    contributorDeadline: new Date(row.contributor_deadline ?? row.deadline).toISOString(),
+    maintainerReviewDeadline: new Date(row.maintainer_review_deadline ?? new Date(row.deadline).getTime() + 7 * 24 * 60 * 60 * 1_000).toISOString(),
+    revisionExtensionUsed: row.revision_extension_used ?? false,
+    timeoutResolution: row.timeout_resolution ?? 'NONE',
     deadline: new Date(row.deadline).toISOString(),
     criteria: row.criteria,
     status: row.status,
@@ -91,6 +103,7 @@ function fromRow(row: BountyRow): Bounty {
   if (row.onchain_id) bounty.onchainId = row.onchain_id;
   if (row.funding_tx_hash) bounty.fundingTxHash = row.funding_tx_hash;
   if (row.payout_tx_hash) bounty.payoutTxHash = row.payout_tx_hash;
+  if (row.refund_tx_hash) bounty.refundTxHash = row.refund_tx_hash;
   if (row.assigned_developer_user_id) bounty.assignedDeveloperUserId = row.assigned_developer_user_id;
   if (row.assigned_developer_github_login) bounty.assignedDeveloperGithubLogin = row.assigned_developer_github_login;
   if (row.assigned_developer_address) bounty.assignedDeveloperAddress = row.assigned_developer_address;
@@ -109,6 +122,9 @@ function fromRow(row: BountyRow): Bounty {
   if (row.review_payment_pending_tx_hash) bounty.reviewPaymentPendingTxHash = row.review_payment_pending_tx_hash;
   if (row.review_paid_at) bounty.reviewPaidAt = new Date(row.review_paid_at).toISOString();
   if (row.review_consumed_at) bounty.reviewConsumedAt = new Date(row.review_consumed_at).toISOString();
+  if (row.timeout_resolved_at) bounty.timeoutResolvedAt = new Date(row.timeout_resolved_at).toISOString();
+  if (row.appeal_deadline) bounty.appealDeadline = new Date(row.appeal_deadline).toISOString();
+  if (row.appeal_message) bounty.appealMessage = row.appeal_message;
   return bounty;
 }
 
@@ -140,12 +156,20 @@ function toRow(bounty: Bounty) {
     review_paid_at: bounty.reviewPaidAt ?? null,
     review_consumed_at: bounty.reviewConsumedAt ?? null,
     revision_requests: bounty.revisionRequests,
+    contributor_deadline: bounty.contributorDeadline,
+    maintainer_review_deadline: bounty.maintainerReviewDeadline,
+    revision_extension_used: bounty.revisionExtensionUsed,
+    timeout_resolution: bounty.timeoutResolution,
+    timeout_resolved_at: bounty.timeoutResolvedAt ?? null,
+    appeal_deadline: bounty.appealDeadline ?? null,
+    appeal_message: bounty.appealMessage ?? null,
     deadline: bounty.deadline,
     criteria: bounty.criteria,
     status: bounty.status,
     onchain_id: bounty.onchainId ?? null,
     funding_tx_hash: bounty.fundingTxHash ?? null,
     payout_tx_hash: bounty.payoutTxHash ?? null,
+    refund_tx_hash: bounty.refundTxHash ?? null,
     assigned_developer_user_id: bounty.assignedDeveloperUserId ?? null,
     assigned_developer_github_login: bounty.assignedDeveloperGithubLogin ?? null,
     assigned_developer_address: bounty.assignedDeveloperAddress?.toLowerCase() ?? null,
