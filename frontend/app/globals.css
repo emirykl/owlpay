@@ -136,9 +136,9 @@ a { color: inherit; text-decoration: none; }
 .status-open, .status-approved, .status-paid { color: var(--green); background: #eaf3ed; }
 .status-closed { color: #b42318; background: #feeceb; }
 .closedText { color: #b42318 !important; }
-.closedNotice { margin-top: 18px; padding: 18px 20px; border: 1px solid #f4c7c3; border-radius: 18px; background: #fff3f2; color: #7a271a; }
-.closedNotice strong { display: block; font-size: 14px; }
-.closedNotice p { margin: 5px 0 0; color: #a14438; font-size: 12px; line-height: 1.5; }
+.closedNotice { margin-top: 18px; padding: 14px 18px; border: 1px solid #f4c7c3; border-radius: 16px; background: #fff3f2; color: #7a271a; display: flex; align-items: baseline; gap: 8px; }
+.closedNotice strong { font-size: 13px; }
+.closedNotice span { color: #a14438; font-size: 11px; }
 .status-revision_required, .status-human_review { color: #7d5900; background: #fff2cf; }
 .rowLink { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--line); }
 .rowLink { background: white; color: var(--ink); }
@@ -176,7 +176,7 @@ a { color: inherit; text-decoration: none; }
 .formSuccess { color: var(--green); background: #edf5ef; border-radius: 12px; padding: 12px; margin: 12px 0 0; font-size: 12px; }
 .detailModal { width: min(780px, 100%); }
 .detailHeader p { color: var(--muted); line-height: 1.6; margin: 12px 0 0; max-width: 620px; }
-.detailStats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 28px; }
+.detailStats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 28px; }
 .detailStats > div { background: white; border: 1px solid var(--line); border-radius: 16px; padding: 16px; display: grid; gap: 8px; }
 .detailStats span, .submissionCard > span { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
 .detailStats strong { font-size: 14px; }
