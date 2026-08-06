@@ -29,6 +29,7 @@ interface WalletState {
 
 const WalletContext = createContext<WalletState | null>(null);
 const chainHex = `0x${goatTestnet.id.toString(16)}`;
+const connectionPreferenceKey = 'owlpay.wallet.connection';
 
 function firstAddress(result: unknown): `0x${string}` | null {
   return Array.isArray(result) && typeof result[0] === 'string' && /^0x[a-fA-F0-9]{40}$/.test(result[0])
@@ -92,6 +93,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setProvider(target);
       setAddress(connectedAddress);
       setChainId(numericChain);
+      window.localStorage.setItem(connectionPreferenceKey, 'connected');
       if (numericChain !== goatTestnet.id) await switchProviderToGoat(target);
     } catch (connectionError) {
       setError(walletErrorMessage(connectionError, 'MetaMask connection failed.'));
@@ -143,6 +145,32 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!availableProvider || provider) return;
+    if (window.localStorage.getItem(connectionPreferenceKey) === 'disconnected') return;
+    let cancelled = false;
+
+    async function restoreConnection() {
+      try {
+        const accounts = await availableProvider!.request({ method: 'eth_accounts' });
+        const connectedAddress = firstAddress(accounts);
+        if (!connectedAddress || cancelled) return;
+        const currentChain = await availableProvider!.request({ method: 'eth_chainId' });
+        if (cancelled) return;
+        setProvider(availableProvider);
+        setAddress(connectedAddress);
+        setChainId(typeof currentChain === 'string' ? Number.parseInt(currentChain, 16) : null);
+        setError(null);
+        window.localStorage.setItem(connectionPreferenceKey, 'connected');
+      } catch {
+        // Silent restoration must never interrupt the page or open a wallet prompt.
+      }
+    }
+
+    void restoreConnection();
+    return () => { cancelled = true; };
+  }, [availableProvider, provider]);
+
+  useEffect(() => {
     if (!provider) return;
     const accountsChanged = (...args: unknown[]) => setAddress(firstAddress(args[0]));
     const chainChanged = (...args: unknown[]) => setChainId(typeof args[0] === 'string' ? Number.parseInt(args[0], 16) : null);
@@ -156,6 +184,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const disconnect = useCallback(async () => {
     const currentProvider = provider;
+    window.localStorage.setItem(connectionPreferenceKey, 'disconnected');
     setProvider(null);
     setAddress(null);
     setChainId(null);
