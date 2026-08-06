@@ -598,23 +598,52 @@ a { color: inherit; text-decoration: none; }
 .reviewHelp.open { border-color: var(--ink); background: var(--ink); color: white; }
 .reviewHelp.open > span { opacity: 1; transform: translateY(0); }
 .reviewCard { border: 1px solid var(--line); border-radius: 20px; overflow: hidden; background: white; }
-.reviewMain { padding: 20px; }
-.reviewMain > span,.reviewGrid span { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
-.reviewMain h3 { margin: 10px 0 7px; font-size: 19px; letter-spacing: -.035em; }
-.reviewMain p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.reviewMain { padding: 24px; display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 16px; }
+.reviewRepositoryAvatar { width: 58px; height: 58px; border-radius: 17px; background: #ecece8 center / cover no-repeat; display: grid; place-items: center; color: #62655d; box-shadow: inset 0 0 0 1px rgba(18,19,15,.07); font-size: 16px; font-weight: 820; }
+.reviewMainCopy { min-width: 0; }
+.reviewMainCopy > span,.reviewGrid span { color: var(--muted); font-size: 10px; font-weight: 680; text-transform: uppercase; letter-spacing: .09em; }
+.reviewMain h3 { margin: 8px 0 6px; font-size: 24px; font-weight: 850; letter-spacing: -.04em; }
+.reviewMain p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
 .reviewGrid { display: grid; grid-template-columns: 1fr 1fr; border-block: 1px solid var(--line); }
-.reviewGrid > div { display: grid; gap: 7px; padding: 15px 20px; }
+.reviewGrid > div { display: grid; gap: 8px; padding: 17px 22px; }
 .reviewGrid > div + div { border-left: 1px solid var(--line); }
-.reviewGrid strong { font-size: 12px; }
-.reviewCriterion { padding: 16px 20px; display: flex; align-items: center; gap: 12px; }
-.reviewCriterion > span { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: #e8f2eb; color: var(--green); }
-.reviewCriterion svg { width: 15px; }
+.reviewGrid strong { font-size: 14px; }
+.reviewCriterion { padding: 17px 22px; display: flex; align-items: center; gap: 13px; }
+.reviewCriterion > span { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: #e8f2eb; color: var(--green); }
+.reviewCriterion svg { width: 16px; }
 .reviewCriterion p,.readyNotice p { margin: 0; display: grid; gap: 4px; }
-.reviewCriterion strong,.readyNotice strong { font-size: 10px; }
-.reviewCriterion small,.readyNotice small { color: var(--muted); font-size: 10px; }
+.reviewCriterion strong { font-size: 12px; }
+.reviewCriterion small { color: var(--muted); font-size: 11px; }
+.readyNotice strong { font-size: 10px; }
+.readyNotice small { color: var(--muted); font-size: 10px; }
 .walletGate { margin-top: 12px; }
 .walletGate .walletMenu { flex: 0 0 auto; }
 .readyNotice { margin-top: 12px; padding: 15px 18px; border-radius: 16px; background: #eaf3ed; display: flex; align-items: center; gap: 12px; }
+.balanceSummary { margin-top: 12px; overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: white; transition: border-color .2s, box-shadow .2s; }
+.balanceSummary.covered { border-color: rgba(36,92,68,.24); box-shadow: 0 14px 34px rgba(36,92,68,.07); }
+.balanceSummaryHeader { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 18px; background: linear-gradient(135deg,#fff,#fafbf8); }
+.balanceSummaryHeader > div { display: grid; gap: 4px; }
+.balanceSummaryHeader > div > span { color: var(--muted); font-size: 9px; font-weight: 760; letter-spacing: .1em; text-transform: uppercase; }
+.balanceSummaryHeader h4 { margin: 0; font-size: 20px; font-weight: 850; letter-spacing: -.045em; }
+.balanceSummaryStatus { width: fit-content; border-radius: 999px; font-size: 9px; font-weight: 780; white-space: nowrap; }
+.balanceSummaryStatus { padding: 7px 10px; background: #f0f1ed; color: #666960; }
+.balanceSummaryStatus.covered { background: #e5f1e9; color: var(--green); }
+.balanceSummaryStatus.attention { background: #fff4dd; color: #8b5d00; }
+.balanceSummaryRows { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+.balanceSummaryRow { min-height: 98px; padding: 16px 18px; display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 12px; }
+.balanceSummaryRow:only-child { grid-column: 1 / -1; }
+.balanceSummaryRow + .balanceSummaryRow { border-left: 1px solid var(--line); }
+.balanceCheckBadge { width: 32px; height: 32px; border-radius: 50%; background: #f0f1ed; color: #74776f; display: grid; place-items: center; font-size: 12px; font-weight: 850; }
+.balanceCheckBadge.covered { background: #e5f1e9; color: var(--green); }
+.balanceCheckBadge.insufficient { background: #fae9e7; color: #9d3131; }
+.balanceCheckBadge svg { width: 17px; height: 17px; }
+.balanceSummaryCopy { min-width: 0; display: grid; gap: 4px; }
+.balanceSummaryCopy > span { color: var(--muted); font-size: 9px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.balanceSummaryCopy > strong { overflow-wrap: anywhere; font-size: 21px; font-weight: 850; line-height: 1.12; letter-spacing: -.04em; }
+.balanceSummaryCopy > small { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.balanceSummaryCopy > small b { color: var(--ink); font-weight: 760; }
+.balanceRowActions { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-start; padding-left: 44px; }
+.balanceRowActions .secondaryButton { padding: 9px 13px; font-size: 10px; white-space: nowrap; }
 .wizardActions { padding-top: 24px; display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid var(--line); }
 .wizardActions .primaryButton,.wizardActions .secondaryButton { min-width: 112px; }
 .wizardActions .primaryButton { padding-inline: 20px; }
@@ -846,6 +875,12 @@ a { color: inherit; text-decoration: none; }
   .connectionGate .walletButton { width: 100%; }
   .reviewGrid { grid-template-columns: 1fr; }
   .reviewGrid > div + div { border-left: 0; border-top: 1px solid var(--line); }
+  .balanceSummaryHeader { align-items: flex-start; }
+  .balanceSummaryRows { grid-template-columns: 1fr; }
+  .balanceSummaryRow { min-height: 88px; padding: 15px 18px; }
+  .balanceSummaryRow + .balanceSummaryRow { border-left: 0; border-top: 1px solid var(--line); }
+  .balanceSummaryCopy > strong { font-size: 20px; }
+  .balanceRowActions { padding-left: 44px; flex-wrap: wrap; }
   .wizardActions > button { flex: 1; }
   .reviewPlanChoices { grid-template-columns: 1fr; }
 
