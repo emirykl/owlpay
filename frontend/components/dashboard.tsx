@@ -155,7 +155,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
                 <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
               ) : (
                 <div className="myApplicationList">{myApplications.data?.items.map(({ application, bounty }) => (
-                  <MyApplicationCard application={application} bounty={bounty} key={application.id} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} />
+                  <MyApplicationCard application={application} bounty={bounty} key={application.id} now={now} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} />
                 ))}</div>
               )}
             </section>
@@ -205,22 +205,26 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
   );
 }
 
-function MyApplicationCard({ application, bounty, onOpen, reduceMotion }: { application: BountyApplication; bounty: Bounty; onOpen: () => void; reduceMotion: boolean | null }) {
+function MyApplicationCard({ application, bounty, now, onOpen, reduceMotion }: { application: BountyApplication; bounty: Bounty; now: number; onOpen: () => void; reduceMotion: boolean | null }) {
   const repository = repositoryMeta(bounty.repositoryUrl);
+  const deadline = getBountyDeadlineState(bounty.deadline, now);
+  const needsRevision = bounty.status === 'REVISION_REQUIRED';
+  const latestRevisionRequest = bounty.revisionRequests?.at(-1);
 
   return (
-    <motion.button className="myApplicationCard" onClick={onOpen} whileHover={reduceMotion ? undefined : { y: -3 }} whileTap={{ scale: .995 }}>
+    <motion.button className={`myApplicationCard ${needsRevision ? 'revisionRequiredCard' : ''}`} onClick={onOpen} whileHover={reduceMotion ? undefined : { y: -3 }} whileTap={{ scale: .995 }}>
       <div className="myApplicationCardTop">
         <div className="marketplaceRepo">
           <span className="marketplaceAvatar" role="img" aria-label={`${repository.owner} GitHub avatar`} style={{ backgroundImage: `url(${repository.avatarUrl})` }}>{repository.owner.slice(0, 1).toUpperCase()}</span>
           <strong>{repository.fullName}</strong>
         </div>
-        <span className={`applicationState state-${application.status.toLowerCase()}`}>{application.status}</span>
+        <span className={`applicationState ${needsRevision ? 'revisionApplicationState' : `state-${application.status.toLowerCase()}`}`}>{needsRevision ? 'Action required' : application.status}</span>
       </div>
-      <div className="myApplicationCardBody"><h2>{bounty.title}</h2><p>{application.message}</p></div>
+      <div className="myApplicationCardBody"><h2>{bounty.title}</h2><p>{needsRevision && latestRevisionRequest ? latestRevisionRequest.message : application.message}</p></div>
       <div className="myApplicationCardFooter">
         <div><span>Reward</span><strong>{bounty.rewardAmount} USDC</strong></div>
         <div><span>Bounty</span><strong>{statusLabels[bounty.status]}</strong></div>
+        <div><span>Deadline</span><strong>{deadline.closed ? 'Deadline ended' : deadline.label}</strong></div>
         <ArrowUpRight />
       </div>
     </motion.button>
