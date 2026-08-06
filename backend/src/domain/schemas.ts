@@ -81,6 +81,22 @@ export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
 export type ReviewPlan = CreateBountyInput['reviewPlan'];
 export type ReviewPaymentStatus = 'NOT_REQUIRED' | 'REQUIRED' | 'PAID' | 'CONSUMED';
+export type FlowOrderStatus = 'CHECKOUT_VERIFIED' | 'PAYMENT_CONFIRMED' | 'INVOICED' | 'FAILED' | 'EXPIRED' | 'CANCELLED';
+
+export interface BrowserReviewPaymentOrder {
+  orderId: string;
+  flow: 'ERC20_DIRECT' | 'ERC20_3009' | 'ERC20_APPROVE_XFER';
+  tokenSymbol: string;
+  tokenContract: string;
+  fromAddress: string;
+  payToAddress: string;
+  chainId: number;
+  amountWei: string;
+  expiresAt: number;
+  calldataSignRequest?: Record<string, unknown>;
+  x402?: Record<string, unknown>;
+  clientTxHash?: string;
+}
 
 export interface BountyApplication {
   id: string;
@@ -133,6 +149,15 @@ export interface Bounty extends CreateBountyInput {
   reviewPaymentStatus: ReviewPaymentStatus;
   reviewPaymentTxHash?: string;
   reviewPaymentTxHashes: string[];
+  reviewPaymentIntentId?: string;
+  reviewPaymentOrderId?: string;
+  reviewPaymentOrderIds: string[];
+  reviewPaymentTargetPlan?: Exclude<ReviewPlan, 'NONE'>;
+  reviewPaymentPayerAddress?: string;
+  reviewPaymentOrderStatus?: FlowOrderStatus;
+  reviewPaymentOrder?: BrowserReviewPaymentOrder;
+  reviewPaymentProof?: Record<string, unknown>;
+  reviewPaymentPendingTxHash?: string;
   reviewPaidAt?: string;
   reviewConsumedAt?: string;
   submission?: Submission;

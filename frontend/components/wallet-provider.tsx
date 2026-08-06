@@ -1,6 +1,9 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import type { Eip1193Provider } from 'ethers';
+import type { Order as GoatFlowOrder } from 'goatflow-sdk';
+import type { ReviewPaymentOrder } from '@/lib/api';
 import { goatTestnet } from '@/lib/network';
 import {
   findLegacyMetaMaskProvider,
@@ -24,6 +27,7 @@ interface WalletState {
   disconnect(): Promise<void>;
   switchToGoat(): Promise<void>;
   sendTransaction(transaction: { to: `0x${string}`; data: `0x${string}` }): Promise<`0x${string}`>;
+  payGoatFlowOrder(order: ReviewPaymentOrder): Promise<`0x${string}`>;
   signMessage(message: string): Promise<`0x${string}`>;
 }
 
@@ -124,6 +128,28 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return result as `0x${string}`;
   }, [address, provider]);
 
+  const payGoatFlowOrder = useCallback(async (order: ReviewPaymentOrder) => {
+    if (!provider || !address) throw new Error('Connect your wallet first.');
+    if (order.chainId !== goatTestnet.id) throw new Error('GOAT Flow returned an unsupported payment network.');
+    if (order.fromAddress.toLowerCase() !== address.toLowerCase()) throw new Error('GOAT Flow order belongs to a different wallet.');
+    if (!/^0x[a-fA-F0-9]{40}$/.test(order.tokenContract) || !/^0x[a-fA-F0-9]{40}$/.test(order.payToAddress)) {
+      throw new Error('GOAT Flow returned invalid payment addresses.');
+    }
+    if (!/^\d+$/.test(order.amountWei) || BigInt(order.amountWei) <= BigInt(0)) throw new Error('GOAT Flow returned an invalid payment amount.');
+    if (order.expiresAt * 1_000 <= Date.now()) throw new Error('The GOAT Flow payment order expired. Please try again.');
+    if (chainId !== goatTestnet.id) await switchToGoat();
+
+    const [{ BrowserProvider }, { PaymentHelper }] = await Promise.all([import('ethers'), import('goatflow-sdk')]);
+    const browserProvider = new BrowserProvider(provider as Eip1193Provider);
+    const signer = await browserProvider.getSigner(address);
+    const payment = new PaymentHelper(signer);
+    const result = await payment.pay(order as GoatFlowOrder);
+    if (!result.success || !result.txHash || !/^0x[a-fA-F0-9]{64}$/.test(result.txHash)) {
+      throw new Error(result.error || 'GOAT Flow payment failed.');
+    }
+    return result.txHash as `0x${string}`;
+  }, [address, chainId, provider, switchToGoat]);
+
   useEffect(() => {
     const announced = (event: Event) => {
       const detail = (event as CustomEvent<Eip6963ProviderDetail>).detail;
@@ -193,9 +219,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, [provider]);
 
   const value = useMemo<WalletState>(() => ({
-    address, chainId, isConnecting, error, connect, switchToGoat, sendTransaction, signMessage,
+    address, chainId, isConnecting, error, connect, switchToGoat, sendTransaction, payGoatFlowOrder, signMessage,
     disconnect
-  }), [address, chainId, connect, disconnect, error, isConnecting, sendTransaction, signMessage, switchToGoat]);
+  }), [address, chainId, connect, disconnect, error, isConnecting, payGoatFlowOrder, sendTransaction, signMessage, switchToGoat]);
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
 }

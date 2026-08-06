@@ -6,7 +6,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { encodeFunctionData } from 'viem';
 import type { Bounty, BountyApplication } from '@/lib/api';
 import { owlpayApi } from '@/lib/api';
-import { contractAddress, contractsReady, erc20Abi, owlPayAbi } from '@/lib/contracts';
+import { contractAddress, contractsReady, owlPayAbi } from '@/lib/contracts';
 import { goatPublicClient, goatTestnet } from '@/lib/network';
 import { ArrowUpRight, Check, GitHubMark, LinkMark, MetaMaskMark } from './icons';
 import { useAuth } from './auth-provider';
@@ -18,7 +18,7 @@ import { getBountyDeadlineState } from '@/lib/bounty-deadline';
 export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty; onClose: () => void }) {
   const reduceMotion = useReducedMotion();
   const queryClient = useQueryClient();
-  const { address, sendTransaction } = useWallet();
+  const { address, sendTransaction, payGoatFlowOrder } = useWallet();
   const { configured, user, githubLogin, signIn } = useAuth();
   const [success, setSuccess] = useState<string | null>(null);
   const [applicationMessage, setApplicationMessage] = useState('');
@@ -44,25 +44,11 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const repository = getRepositoryIdentity(bounty.repositoryUrl);
   const standardPrice = Number(network.data?.reviewPrices.standard ?? 1);
   const securityPrice = Number(network.data?.reviewPrices.security ?? 2);
+  const reviewTokenSymbol = network.data?.reviewPaymentToken.symbol ?? 'USDC';
   const paidReviewAmount = Number(bounty.reviewPaidAmount ?? (bounty.reviewPaymentStatus === 'PAID' ? bounty.reviewPrice : 0));
   const securityActive = bounty.reviewPlan === 'SECURITY' && paidReviewAmount >= securityPrice && ['PAID', 'CONSUMED'].includes(bounty.reviewPaymentStatus);
   const standardActive = !securityActive && bounty.reviewPlan === 'STANDARD' && paidReviewAmount >= standardPrice && ['PAID', 'CONSUMED'].includes(bounty.reviewPaymentStatus);
   const canUpgradeReview = isOwner && bounty.reviewPaymentStatus !== 'CONSUMED' && !['PAID', 'REFUNDED', 'CANCELLED'].includes(bounty.status);
-  const standardPaymentRequirement = useQuery({
-    queryKey: ['review-payment-requirement', bounty.id, 'STANDARD', paidReviewAmount],
-    queryFn: () => owlpayApi.requestReviewPayment(bounty.id, 'STANDARD'),
-    enabled: canUpgradeReview && !standardActive,
-    retry: false,
-    staleTime: 30_000
-  });
-  const securityPaymentRequirement = useQuery({
-    queryKey: ['review-payment-requirement', bounty.id, 'SECURITY', paidReviewAmount],
-    queryFn: () => owlpayApi.requestReviewPayment(bounty.id, 'SECURITY'),
-    enabled: canUpgradeReview && !securityActive,
-    retry: false,
-    staleTime: 30_000
-  });
-
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
@@ -141,23 +127,16 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
       if (!address || address.toLowerCase() !== bounty.ownerAddress.toLowerCase()) {
         throw new Error('Connect the wallet that created this bounty.');
       }
-      const prefetchedRequirement = targetPlan === 'STANDARD' ? standardPaymentRequirement.data : securityPaymentRequirement.data;
-      const requirement = prefetchedRequirement ?? await owlpayApi.requestReviewPayment(bounty.id, targetPlan);
-      const option = requirement.accepts[0];
-      if (!option || option.network !== 'eip155:48816') throw new Error('No supported GOAT Testnet3 payment option was returned.');
-      const txHash = await sendTransaction({
-        to: option.asset,
-        data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [option.payTo, BigInt(option.amount)] })
-      });
-      await goatPublicClient.waitForTransactionReceipt({ hash: txHash });
-      return owlpayApi.confirmReviewPayment(bounty.id, txHash, targetPlan);
+      const order = await owlpayApi.requestReviewPayment(bounty.id, targetPlan);
+      const txHash = order.clientTxHash as `0x${string}` | undefined ?? await payGoatFlowOrder(order);
+      return owlpayApi.confirmReviewPayment(bounty.id, order.orderId, txHash);
     },
     onSuccess: async (updated) => {
       setSuccess(`${updated.reviewPlan === 'SECURITY' ? 'Security' : 'Standard'} review is active.`);
       queryClient.setQueryData(['bounty', bounty.id], updated);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['bounties'] }),
-        queryClient.invalidateQueries({ queryKey: ['review-payment-requirement', bounty.id] })
+        queryClient.invalidateQueries({ queryKey: ['bounty', bounty.id] })
       ]);
     }
   });
@@ -255,7 +234,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
                 <button type="button" className="reviewPackageAction" onClick={() => purchaseReviewMutation.mutate('STANDARD')} disabled={purchaseReviewMutation.isPending || standardActive}>
                   <span className="reviewPackageLogo"><ReviewOwlLogo tone="standard" /></span>
                   <span className="reviewPackageCopy"><strong>Standard review</strong></span>
-                  <span className="reviewPackagePrice">{standardActive ? 'Active' : `${Math.max(0, standardPrice - paidReviewAmount)} otUSDC`}</span>
+                  <span className="reviewPackagePrice">{standardActive ? 'Active' : `${Math.max(0, standardPrice - paidReviewAmount)} ${reviewTokenSymbol}`}</span>
                 </button>
                 <button type="button" className="reviewPackageInfoButton" aria-label="Show Standard review details" aria-haspopup="dialog" aria-expanded={reviewInfo === 'STANDARD'} onClick={() => setReviewInfo('STANDARD')}>?</button>
               </motion.article>
@@ -263,7 +242,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
                 <button type="button" className="reviewPackageAction" onClick={() => purchaseReviewMutation.mutate('SECURITY')} disabled={purchaseReviewMutation.isPending}>
                   <span className="reviewPackageLogo"><ReviewOwlLogo tone="security" /></span>
                   <span className="reviewPackageCopy"><strong>Security review</strong></span>
-                  <span className="reviewPackagePrice">{Math.max(0, securityPrice - paidReviewAmount)} otUSDC</span>
+                  <span className="reviewPackagePrice">{Math.max(0, securityPrice - paidReviewAmount)} ${reviewTokenSymbol}</span>
                 </button>
                 <button type="button" className="reviewPackageInfoButton" aria-label="Show Security review details" aria-haspopup="dialog" aria-expanded={reviewInfo === 'SECURITY'} onClick={() => setReviewInfo('SECURITY')}>?</button>
               </motion.article>

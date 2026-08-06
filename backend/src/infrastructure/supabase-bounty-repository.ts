@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BountyRepository } from '../application/ports.js';
-import type { AgentDecision, Bounty, BountyStatus, Criterion, ReviewPaymentStatus, ReviewPlan, Submission } from '../domain/schemas.js';
+import type { AgentDecision, Bounty, BountyStatus, BrowserReviewPaymentOrder, Criterion, FlowOrderStatus, ReviewPaymentStatus, ReviewPlan, Submission } from '../domain/schemas.js';
 
 interface BountyRow {
   id: string;
@@ -17,6 +17,15 @@ interface BountyRow {
   review_payment_status: ReviewPaymentStatus;
   review_payment_tx_hash: string | null;
   review_payment_tx_hashes: string[] | null;
+  review_payment_intent_id: string | null;
+  review_payment_order_id: string | null;
+  review_payment_order_ids: string[] | null;
+  review_payment_target_plan: Exclude<ReviewPlan, 'NONE'> | null;
+  review_payment_payer_address: string | null;
+  review_payment_order_status: FlowOrderStatus | null;
+  review_payment_order: BrowserReviewPaymentOrder | null;
+  review_payment_proof: Record<string, unknown> | null;
+  review_payment_pending_tx_hash: string | null;
   review_paid_at: string | null;
   review_consumed_at: string | null;
   deadline: string;
@@ -69,6 +78,7 @@ function fromRow(row: BountyRow): Bounty {
     reviewPaidAmount: String(row.review_paid_amount ?? (['PAID', 'CONSUMED'].includes(row.review_payment_status) ? row.review_price : 0)),
     reviewPaymentStatus: row.review_payment_status ?? 'REQUIRED',
     reviewPaymentTxHashes: row.review_payment_tx_hashes ?? (row.review_payment_tx_hash ? [row.review_payment_tx_hash] : []),
+    reviewPaymentOrderIds: row.review_payment_order_ids ?? (row.review_payment_order_id ? [row.review_payment_order_id] : []),
     deadline: new Date(row.deadline).toISOString(),
     criteria: row.criteria,
     status: row.status,
@@ -87,6 +97,14 @@ function fromRow(row: BountyRow): Bounty {
   if (row.submission) bounty.submission = row.submission;
   if (row.decision) bounty.decision = row.decision;
   if (row.review_payment_tx_hash) bounty.reviewPaymentTxHash = row.review_payment_tx_hash;
+  if (row.review_payment_intent_id) bounty.reviewPaymentIntentId = row.review_payment_intent_id;
+  if (row.review_payment_order_id) bounty.reviewPaymentOrderId = row.review_payment_order_id;
+  if (row.review_payment_target_plan) bounty.reviewPaymentTargetPlan = row.review_payment_target_plan;
+  if (row.review_payment_payer_address) bounty.reviewPaymentPayerAddress = row.review_payment_payer_address;
+  if (row.review_payment_order_status) bounty.reviewPaymentOrderStatus = row.review_payment_order_status;
+  if (row.review_payment_order) bounty.reviewPaymentOrder = row.review_payment_order;
+  if (row.review_payment_proof) bounty.reviewPaymentProof = row.review_payment_proof;
+  if (row.review_payment_pending_tx_hash) bounty.reviewPaymentPendingTxHash = row.review_payment_pending_tx_hash;
   if (row.review_paid_at) bounty.reviewPaidAt = new Date(row.review_paid_at).toISOString();
   if (row.review_consumed_at) bounty.reviewConsumedAt = new Date(row.review_consumed_at).toISOString();
   return bounty;
@@ -108,6 +126,15 @@ function toRow(bounty: Bounty) {
     review_payment_status: bounty.reviewPaymentStatus,
     review_payment_tx_hash: bounty.reviewPaymentTxHash ?? null,
     review_payment_tx_hashes: bounty.reviewPaymentTxHashes,
+    review_payment_intent_id: bounty.reviewPaymentIntentId ?? null,
+    review_payment_order_id: bounty.reviewPaymentOrderId ?? null,
+    review_payment_order_ids: bounty.reviewPaymentOrderIds,
+    review_payment_target_plan: bounty.reviewPaymentTargetPlan ?? null,
+    review_payment_payer_address: bounty.reviewPaymentPayerAddress?.toLowerCase() ?? null,
+    review_payment_order_status: bounty.reviewPaymentOrderStatus ?? null,
+    review_payment_order: bounty.reviewPaymentOrder ?? null,
+    review_payment_proof: bounty.reviewPaymentProof ?? null,
+    review_payment_pending_tx_hash: bounty.reviewPaymentPendingTxHash ?? null,
     review_paid_at: bounty.reviewPaidAt ?? null,
     review_consumed_at: bounty.reviewConsumedAt ?? null,
     deadline: bounty.deadline,
