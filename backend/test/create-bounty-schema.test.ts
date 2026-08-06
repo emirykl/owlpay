@@ -15,6 +15,20 @@ function payload(deadline: string) {
 }
 
 describe('createBountySchema deadline', () => {
+  it('accepts free manual review while keeping standard review as the default', () => {
+    const manual = createBountySchema.safeParse({
+      ...payload(new Date(Date.now() + 24 * 3_600_000).toISOString()),
+      reviewPlan: 'NONE'
+    });
+    const defaultPlan = createBountySchema.parse({
+      ...payload(new Date(Date.now() + 24 * 3_600_000).toISOString()),
+      reviewPlan: undefined
+    });
+
+    expect(manual.success).toBe(true);
+    expect(defaultPlan.reviewPlan).toBe('STANDARD');
+  });
+
   it('rejects a deadline shorter than 1 hour', () => {
     const result = createBountySchema.safeParse(payload(new Date(Date.now() + 30 * 60_000).toISOString()));
     expect(result.success).toBe(false);

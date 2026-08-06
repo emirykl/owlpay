@@ -1,5 +1,5 @@
 import { DomainError } from '../domain/errors.js';
-import type { Criterion, VerificationInput } from '../domain/schemas.js';
+import type { Criterion, ReviewPlan, VerificationInput } from '../domain/schemas.js';
 import type { GitHubEvidenceProvider, ManageableRepository, PullRequestEvidence } from '../application/ports.js';
 
 const pullRequestPattern = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)\/?$/;
@@ -57,7 +57,7 @@ export class GitHubClient implements GitHubEvidenceProvider {
     };
   }
 
-  async reviewPullRequest(url: string, criteria: Criterion[]): Promise<VerificationInput> {
+  async reviewPullRequest(url: string, criteria: Criterion[], plan: Exclude<ReviewPlan, 'NONE'>): Promise<VerificationInput> {
     const pullRequest = await this.getPullRequest(url);
     const match = pullRequestPattern.exec(url);
     if (!match?.[1] || !match[2] || !match[3]) throw new DomainError('Invalid GitHub pull request URL');
@@ -82,7 +82,7 @@ export class GitHubClient implements GitHubEvidenceProvider {
       : [];
     const failedChecks = checks.filter((check) => check.status === 'completed' && !['success', 'neutral', 'skipped'].includes(check.conclusion ?? ''));
     const successfulChecks = checks.filter((check) => check.status === 'completed' && check.conclusion === 'success');
-    const riskFindings = scanPatches(files);
+    const riskFindings = plan === 'SECURITY' ? scanPatches(files) : [];
     const evidenceBase = [`commit:${pullRequest.headSha}`, `files:${files.length}`];
 
     const criterionResults = criteria.map((criterion) => {

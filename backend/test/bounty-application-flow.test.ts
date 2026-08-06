@@ -33,6 +33,50 @@ const settlement: SettlementGateway = {
 };
 
 describe('bounty application and assignment flow', () => {
+  it('allows a free manual bounty to be approved without an agent payment or report', async () => {
+    const service = new BountyService(
+      new InMemoryBountyRepository(),
+      new InMemoryApplicationRepository(),
+      github,
+      new VerificationPolicy(),
+      settlement,
+      { async verify() { throw new Error('Manual review must not verify a payment'); } },
+      {
+        paymentToken: '0x0000000000000000000000000000000000000010',
+        treasury: '0x0000000000000000000000000000000000000011',
+        standardPrice: '2',
+        securityPrice: '5'
+      }
+    );
+    const draft = await service.create({
+      title: 'Manually review this pull request',
+      description: 'The maintainer will inspect and approve the pull request.',
+      repositoryUrl: 'https://github.com/owlpay/demo',
+      ownerAddress: '0x0000000000000000000000000000000000000001',
+      rewardAmount: '20',
+      reviewPlan: 'NONE',
+      deadline: new Date(Date.now() + 86_400_000).toISOString(),
+      criteria: [{ id: 'manual', description: 'Maintainer accepts the implementation', mandatory: true, method: 'manual' }]
+    }, owner, 'github-token');
+
+    expect(draft).toMatchObject({ reviewPlan: 'NONE', reviewPrice: '0', reviewPaymentStatus: 'NOT_REQUIRED' });
+    await expect(service.getReviewPaymentRequirement(draft.id, owner)).rejects.toMatchObject({ code: 'MANUAL_REVIEW_SELECTED' });
+    await service.markFunded(draft.id, '7', `0x${'1'.repeat(64)}`, owner.id);
+    const application = await service.apply(draft.id, {
+      message: 'I can complete this work and provide a focused pull request.',
+      developerAddress: '0x0000000000000000000000000000000000000003'
+    }, developers[1]!);
+    await service.assign(draft.id, application.id, owner);
+    const submitted = await service.submit(draft.id, {
+      pullRequestUrl: 'https://github.com/owlpay/demo/pull/42',
+      developerAddress: application.developerAddress
+    }, developers[1]!);
+
+    expect(submitted.bounty.status).toBe('SUBMITTED');
+    expect(submitted.bounty.decision).toBeUndefined();
+    expect(await service.approve(draft.id, owner)).toMatchObject({ status: 'PAID', payoutTxHash: `0x${'9'.repeat(64)}` });
+  });
+
   it('rejects applications after the bounty deadline', async () => {
     const service = new BountyService(
       new InMemoryBountyRepository(),

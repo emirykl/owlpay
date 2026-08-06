@@ -13,7 +13,7 @@ The in-memory repository is retained for isolated local tests. Shared and produc
 ## Supabase setup
 
 1. Create a Supabase project.
-2. Run the files under `supabase/migrations` in numeric order in the SQL editor. Existing projects must run `0004_review_payments.sql` after the earlier migrations.
+2. Run the files under `supabase/migrations` in numeric order in the SQL editor. Existing projects that already ran the earlier migrations must also run `0005_optional_manual_reviews.sql`.
 3. Enable GitHub under Authentication → Providers and copy the Supabase callback URL into the GitHub OAuth App.
 4. Set `PERSISTENCE_MODE=supabase`, `SUPABASE_URL` and the backend-only `SUPABASE_SECRET_KEY`.
 5. Generate a random `AGENT_API_KEY` with at least 24 characters.
@@ -58,4 +58,4 @@ Official GOAT Testnet3 deployments currently include tUSDC at `0xFCA5846c86dC8Df
 
 ## Review payment / x402 boundary
 
-`POST /api/bounties/:id/review-payment` returns HTTP 402 plus a `PAYMENT-REQUIRED` header containing a version-2 exact-payment requirement for GOAT Testnet3. The owner transfers the exact token amount to the configured treasury and confirms the transaction. The backend verifies chain receipt, token, sender, receiver, exact amount, and replay protection before issuing one review credit. Hosted GOAT Flow credentials can replace this adapter later without changing the bounty domain model.
+`POST /api/bounties/:id/review-payment` currently provides an x402-shaped MVP adapter: it returns HTTP 402 plus a machine-readable `PAYMENT-REQUIRED` header, then verifies the owner's exact onchain token transfer, receipt, sender, receiver, amount, and replay protection before issuing one review credit. It is not yet the complete hosted GOAT x402 merchant flow because it does not create a merchant order or persist the facilitator settlement proof. The domain boundary is intentionally isolated so the adapter can be replaced with the official DIRECT merchant integration without changing the bounty workflow.
