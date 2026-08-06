@@ -134,6 +134,11 @@ a { color: inherit; text-decoration: none; }
 .reward { text-align: right; }
 .statusBadge { padding: 6px 10px; border-radius: 999px; background: #ecece8; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .status-open, .status-approved, .status-paid { color: var(--green); background: #eaf3ed; }
+.status-closed { color: #b42318; background: #feeceb; }
+.closedText { color: #b42318 !important; }
+.closedNotice { margin-top: 18px; padding: 18px 20px; border: 1px solid #f4c7c3; border-radius: 18px; background: #fff3f2; color: #7a271a; }
+.closedNotice strong { display: block; font-size: 14px; }
+.closedNotice p { margin: 5px 0 0; color: #a14438; font-size: 12px; line-height: 1.5; }
 .status-revision_required, .status-human_review { color: #7d5900; background: #fff2cf; }
 .rowLink { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--line); }
 .rowLink { background: white; color: var(--ink); }
