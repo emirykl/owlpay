@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { encodeFunctionData, formatUnits, keccak256, parseUnits, stringToHex } from 'viem';
 import { owlpayApi } from '@/lib/api';
 import { useWallet } from './wallet-provider';
@@ -14,11 +14,16 @@ import { WalletButton } from './wallet-button';
 import { IdentityButton } from './identity-button';
 
 const steps = ['Repository', 'Details', 'Reward & review', 'Review & fund'];
+const HOUR = 3_600_000;
+const WEEK = 7 * 24 * HOUR;
+
+function toLocalDateTimeInput(timestamp: number) {
+  const date = new Date(timestamp);
+  return new Date(timestamp - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
 
 function defaultDeadline() {
-  const date = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-  return date.toISOString().slice(0, 16);
+  return toLocalDateTimeInput(Date.now() + 3 * 24 * HOUR);
 }
 
 export function CreateBounty({ onClose }: { onClose: () => void }) {
@@ -34,8 +39,13 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
   const [criterion, setCriterion] = useState('Existing tests must pass');
   const [rewardAmount, setRewardAmount] = useState('20');
   const [reviewPlan, setReviewPlan] = useState<'STANDARD' | 'SECURITY'>('STANDARD');
-  const [minimumDeadline] = useState(() => new Date(Date.now() + 3_600_000).toISOString().slice(0, 16));
+  const [deadlineBounds] = useState(() => ({
+    minimum: toLocalDateTimeInput(Date.now() + HOUR + 60_000),
+    maximum: toLocalDateTimeInput(Date.now() + WEEK - 60_000)
+  }));
   const [formError, setFormError] = useState<string | null>(null);
+  const [repositoryPickerOpen, setRepositoryPickerOpen] = useState(false);
+  const [repositorySearch, setRepositorySearch] = useState('');
 
   const repositories = useQuery({
     queryKey: ['github-repositories', user?.id],
@@ -72,6 +82,12 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
     },
     onSuccess: () => tokenBalance.refetch()
   });
+
+  const selectedRepository = repositories.data?.items.find((repository) => repository.url === repositoryUrl);
+  const filteredRepositories = useMemo(() => {
+    const query = repositorySearch.trim().toLowerCase();
+    return (repositories.data?.items ?? []).filter((repository) => !query || repository.fullName.toLowerCase().includes(query));
+  }, [repositories.data?.items, repositorySearch]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -118,7 +134,10 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
 
   const titleValid = title.trim().length >= 5;
   const descriptionValid = description.trim().length >= 10;
-  const deadlineValid = Boolean(deadline) && new Date(deadline).getTime() >= new Date(minimumDeadline).getTime();
+  const deadlineTimestamp = new Date(deadline).getTime();
+  const deadlineTooSoon = !deadline || deadlineTimestamp < new Date(deadlineBounds.minimum).getTime();
+  const deadlineTooLate = Boolean(deadline) && deadlineTimestamp > new Date(deadlineBounds.maximum).getTime();
+  const deadlineValid = !deadlineTooSoon && !deadlineTooLate;
   const canContinue = step === 0
     ? repositoryUrl.length > 0
     : step === 1
@@ -139,8 +158,12 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
       if (canContinue) setStep((current) => current + 1);
       return;
     }
-    if (new Date(deadline).getTime() < Date.now() + 3_600_000) {
+    if (new Date(deadline).getTime() < Date.now() + HOUR) {
       setFormError('The deadline is too close or has passed. Go back to Details and choose a time at least 1 hour from now.');
+      return;
+    }
+    if (new Date(deadline).getTime() > Date.now() + WEEK) {
+      setFormError('The deadline is too far away. Go back to Details and choose a time within the next 7 days.');
       return;
     }
     mutation.mutate();
@@ -170,7 +193,7 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
             >
               {step === 0 && (
                 <>
-                  <div className="stepCopy"><h3>Which repository needs work?</h3><p>We only show public repositories where your GitHub account has push, maintain, or admin access.</p></div>
+                  <div className="stepCopy"><h3>Choose a repository</h3></div>
                   {authConfigured && !user ? (
                     <div className="connectionGate providerGate"><span className="connectionProviderIcon githubConnectionIcon"><GitHubMark /></span><div><strong>Connect GitHub</strong><p>OwlPay needs your GitHub identity to verify repository ownership.</p></div><button type="button" className="secondaryButton providerAction" onClick={signIn}><GitHubMark />Connect GitHub</button></div>
                   ) : authConfigured && repositories.isLoading ? (
@@ -180,30 +203,36 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
                   ) : authConfigured && repositories.data?.items.length === 0 ? (
                     <div className="connectionGate"><div><strong>No manageable public repository</strong><p>You need push, maintain, or admin access for the MVP.</p></div></div>
                   ) : (
-                    <label className="wizardField"><span>GitHub repository</span>{authConfigured ? (
-                      <select value={repositoryUrl} onChange={(event) => setRepositoryUrl(event.target.value)} required>
-                        <option value="" disabled>Select a repository</option>
-                        {repositories.data?.items.map((repository) => <option value={repository.url} key={repository.id}>{repository.fullName} · {repository.permission}</option>)}
-                      </select>
-                    ) : <input value={repositoryUrl} onChange={(event) => setRepositoryUrl(event.target.value)} type="url" required placeholder="https://github.com/org/repository" />}</label>
+                    <div className="wizardField"><span>GitHub repository</span>{authConfigured ? (
+                      <div className={`repositoryPicker ${repositoryPickerOpen ? 'open' : ''}`}>
+                        <button type="button" className="repositoryPickerTrigger" onClick={() => setRepositoryPickerOpen((open) => !open)} aria-expanded={repositoryPickerOpen}>
+                          {selectedRepository ? <><span className="repositoryPickerAvatar" style={selectedRepository.ownerAvatarUrl ? { backgroundImage: `url(${selectedRepository.ownerAvatarUrl})` } : undefined}>{selectedRepository.ownerLogin.slice(0, 1).toUpperCase()}</span><strong>{selectedRepository.fullName}</strong><small>{selectedRepository.permission}</small></> : <strong>Select a repository</strong>}
+                          <span className="repositoryPickerChevron">⌄</span>
+                        </button>
+                        {repositoryPickerOpen && <div className="repositoryPickerMenu">
+                          <label className="repositoryPickerSearch"><span>⌕</span><input value={repositorySearch} onChange={(event) => setRepositorySearch(event.target.value)} onKeyDown={(event) => event.key === 'Escape' && setRepositoryPickerOpen(false)} placeholder="Search repositories" autoFocus /></label>
+                          <div className="repositoryPickerList">{filteredRepositories.length ? filteredRepositories.map((repository) => <button type="button" className={repository.url === repositoryUrl ? 'selected' : ''} key={repository.id} onClick={() => { setRepositoryUrl(repository.url); setRepositoryPickerOpen(false); setRepositorySearch(''); }}><span className="repositoryPickerAvatar" style={repository.ownerAvatarUrl ? { backgroundImage: `url(${repository.ownerAvatarUrl})` } : undefined}>{repository.ownerLogin.slice(0, 1).toUpperCase()}</span><strong>{repository.fullName}</strong><small>{repository.permission}</small></button>) : <p>No repositories found.</p>}</div>
+                        </div>}
+                      </div>
+                    ) : <input value={repositoryUrl} onChange={(event) => setRepositoryUrl(event.target.value)} type="url" required placeholder="https://github.com/org/repository" />}</div>
                   )}
                 </>
               )}
 
               {step === 1 && (
                 <>
-                  <div className="stepCopy"><h3>Describe the outcome.</h3><p>Write what should exist when the work is complete. Keep implementation details in the repository.</p></div>
+                  <div className="stepCopy"><h3>Describe the outcome</h3></div>
                   <div className="wizardFieldGrid">
                     <label className="wizardField full"><span>Title</span><input value={title} onChange={(event) => setTitle(event.target.value)} required minLength={5} maxLength={120} placeholder="Add a health endpoint" autoFocus />{!titleValid && <small className="fieldValidation">Use at least 5 characters · {title.trim().length}/5</small>}</label>
                     <label className="wizardField full"><span>Description</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} required minLength={10} rows={4} placeholder="Describe the expected outcome and constraints." />{!descriptionValid && <small className="fieldValidation">Use at least 10 characters · {description.trim().length}/10</small>}</label>
-                    <label className="wizardField full"><span>Deadline</span><input value={deadline} onChange={(event) => setDeadline(event.target.value)} type="datetime-local" required min={minimumDeadline} />{!deadlineValid && <small className="fieldValidation">Choose a deadline at least 1 hour from now.</small>}</label>
+                    <label className="wizardField full"><span>Deadline</span><input value={deadline} onChange={(event) => setDeadline(event.target.value)} type="datetime-local" required min={deadlineBounds.minimum} max={deadlineBounds.maximum} />{deadlineTooSoon && <small className="fieldValidation">Choose a time at least 1 hour from now.</small>}{deadlineTooLate && <small className="fieldValidation">Choose a time within the next 7 days.</small>}</label>
                   </div>
                 </>
               )}
 
               {step === 2 && (
                 <>
-                  <div className="stepCopy"><h3>Set the reward and review.</h3><p>The developer receives 97% after approval. The one-time Owl Agent review is paid separately by you.</p></div>
+                  <div className="stepCopy"><h3>Reward & review</h3></div>
                   <div className="wizardFieldGrid">
                     <label className="wizardField full"><span>Mandatory acceptance criterion</span><input value={criterion} onChange={(event) => setCriterion(event.target.value)} required minLength={3} autoFocus /></label>
                     <label className="wizardField"><span>Reward · USDC</span><input value={rewardAmount} onChange={(event) => setRewardAmount(event.target.value)} inputMode="decimal" pattern="\d+(\.\d{1,6})?" required /></label>
@@ -215,7 +244,7 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
 
               {step === 3 && (
                 <>
-                  <div className="stepCopy"><h3>Review before funding.</h3><p>Confirm the repository, evidence requirement, reward, and deadline. Nothing is sent until you approve the wallet action.</p></div>
+                  <div className="stepCopy"><h3>Review & fund</h3></div>
                   <div className="reviewCard">
                     <div className="reviewMain"><span>{repositoryUrl.replace('https://github.com/', '')}</span><h3>{title}</h3><p>{description}</p></div>
                     <div className="reviewGrid"><div><span>Escrow reward</span><strong>{rewardAmount} USDC</strong></div><div><span>Developer receives</span><strong>{developerPayout.toFixed(2)} USDC</strong></div><div><span>Platform fee</span><strong>{platformFee.toFixed(2)} USDC · {(platformFeeRate * 100).toFixed(0)}%</strong></div><div><span>Review package</span><strong>{reviewPrice.toFixed(2)} USDC · owner pays</strong></div><div><span>Deadline</span><strong>{new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(deadline))}</strong></div></div>
