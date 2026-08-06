@@ -228,7 +228,7 @@ function MarketplaceBountyCard({ bounty, now, onOpen, reduceMotion }: { bounty: 
       <div className="marketplaceCardBody"><h2>{bounty.title}</h2><p>{bounty.description}</p></div>
       <div className="marketplaceCardFooter">
         <div><span className="metaIcon"><Users /></span><strong>{applicants}</strong><span>{applicants === 1 ? 'applicant' : 'applicants'}</span></div>
-        <div><span className="metaIcon"><Calendar /></span><strong>{deadline.label}</strong></div>
+        {!isClosed && <div><span className="metaIcon"><Calendar /></span><strong>{deadline.label}</strong></div>}
       </div>
     </motion.button>
   );
