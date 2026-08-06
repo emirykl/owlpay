@@ -1,4 +1,4 @@
-import type { Bounty, BountyApplication, Criterion, VerificationInput } from '../domain/schemas.js';
+import type { Bounty, BountyApplication, Criterion, ReviewPlan, VerificationInput } from '../domain/schemas.js';
 
 export interface BountyRepository {
   list(): Promise<Bounty[]>;
@@ -48,7 +48,7 @@ export interface ManageableRepository {
 
 export interface GitHubEvidenceProvider {
   getPullRequest(url: string): Promise<PullRequestEvidence>;
-  reviewPullRequest(url: string, criteria: Criterion[]): Promise<VerificationInput>;
+  reviewPullRequest(url: string, criteria: Criterion[], plan: Exclude<ReviewPlan, 'NONE'>): Promise<VerificationInput>;
   listManageableRepositories(providerToken: string, expectedUserId: number): Promise<ManageableRepository[]>;
   assertCanManageRepository(repositoryUrl: string, providerToken: string, expectedUserId: number): Promise<ManageableRepository>;
 }

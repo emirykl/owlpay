@@ -90,7 +90,9 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
       return owlpayApi.submitWork(bounty.id, pullRequestUrl, address, submissionTxHash);
     },
     onSuccess: async (result) => {
-      setSuccess(bounty.reviewPaymentStatus === 'PAID'
+      setSuccess(bounty.reviewPlan === 'NONE'
+        ? `Commit ${result.evidence.headSha.slice(0, 8)} submitted. It is ready for the maintainer's manual review.`
+        : bounty.reviewPaymentStatus === 'PAID'
         ? `Commit ${result.evidence.headSha.slice(0, 8)} submitted. Owl Agent review started automatically.`
         : `Commit ${result.evidence.headSha.slice(0, 8)} submitted. The maintainer must purchase the review package.`);
       queryClient.setQueryData(['bounty', bounty.id], result.bounty);
@@ -149,7 +151,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
         </div>
 
         <div className="detailStats">
-          <div><span>Reward</span><strong>{bounty.rewardAmount} USDC</strong></div>
+          <div><span>Reward</span><strong>{bounty.rewardAmount} otUSDC</strong></div>
           <div><span>Applications</span><strong>{bounty.applicantCount}</strong></div>
           <div><span>Deadline</span><strong>{deadline.label}</strong></div>
         </div>
@@ -196,7 +198,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
         {bounty.submission && <div className="submissionCard"><span>Submitted commit</span><strong>{bounty.submission.commitSha.slice(0, 10)}</strong><a href={bounty.submission.pullRequestUrl} target="_blank" rel="noreferrer">Open pull request <ArrowUpRight /></a></div>}
 
         {isOwner && bounty.status !== 'DRAFT' && bounty.reviewPaymentStatus === 'REQUIRED' && (
-          <div className="maintainerReview"><div><strong>Owl Agent review · {bounty.reviewPrice} USDC</strong><p>A one-time x402 payment by the repository owner. It never reduces the developer reward.</p></div><button className="primaryButton" onClick={() => purchaseReviewMutation.mutate()} disabled={purchaseReviewMutation.isPending}>{purchaseReviewMutation.isPending ? 'Confirming payment…' : `Purchase ${bounty.reviewPlan === 'SECURITY' ? 'security' : 'standard'} review`}</button></div>
+          <div className="maintainerReview"><div><strong>Complete review payment · {bounty.reviewPrice} otUSDC</strong><p>Finish the selected package now so the agent can start automatically when a PR arrives.</p></div><button className="primaryButton" onClick={() => purchaseReviewMutation.mutate()} disabled={purchaseReviewMutation.isPending}>{purchaseReviewMutation.isPending ? 'Confirming payment…' : `Pay for ${bounty.reviewPlan === 'SECURITY' ? 'security' : 'standard'} review`}</button></div>
         )}
         {isOwner && bounty.reviewPaymentStatus === 'PAID' && (
           <div className="maintainerReview"><div><strong>Review package ready</strong><p>{bounty.status === 'SUBMITTED' ? 'The pull request is ready for the Owl Agent evidence scan.' : 'The review starts automatically after the assigned developer submits a pull request.'}</p></div>{bounty.status === 'SUBMITTED' && <button className="primaryButton" onClick={() => agentReviewMutation.mutate()} disabled={agentReviewMutation.isPending}>{agentReviewMutation.isPending ? 'Analyzing GitHub evidence…' : 'Run Owl Agent'}</button>}</div>
@@ -214,8 +216,8 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
           </div>
         )}
 
-        {isOwner && bounty.status === 'READY_FOR_REVIEW' && (
-          <div className="maintainerReview"><div><strong>Maintainer decision</strong><p>Review the Owl Agent report and the pull request before approving payment.</p></div><div><button className="secondaryButton" onClick={() => reviewMutation.mutate('revision')} disabled={reviewMutation.isPending}>Request revision</button><button className="primaryButton" onClick={() => reviewMutation.mutate('approve')} disabled={reviewMutation.isPending}>{reviewMutation.isPending ? 'Processing…' : 'Approve & release'}</button></div></div>
+        {isOwner && (bounty.status === 'READY_FOR_REVIEW' || (bounty.reviewPlan === 'NONE' && bounty.status === 'SUBMITTED')) && (
+          <div className="maintainerReview"><div><strong>{bounty.reviewPlan === 'NONE' ? 'Manual review' : 'Maintainer decision'}</strong><p>{bounty.reviewPlan === 'NONE' ? 'Inspect the pull request yourself, then approve payment or request a revision.' : 'Review the Owl Agent report and the pull request before approving payment.'}</p></div><div><button className="secondaryButton" onClick={() => reviewMutation.mutate('revision')} disabled={reviewMutation.isPending}>Request revision</button><button className="primaryButton" onClick={() => reviewMutation.mutate('approve')} disabled={reviewMutation.isPending}>{reviewMutation.isPending ? 'Processing…' : 'Approve & release'}</button></div></div>
         )}
         {reviewMutation.error && <p className="formError" role="alert">{reviewMutation.error.message}</p>}
         {success && <p className="formSuccess" role="status">{success}</p>}

@@ -17,9 +17,9 @@ export interface Bounty {
   repositoryUrl: string;
   ownerAddress: string;
   rewardAmount: string;
-  reviewPlan: 'STANDARD' | 'SECURITY';
+  reviewPlan: 'NONE' | 'STANDARD' | 'SECURITY';
   reviewPrice: string;
-  reviewPaymentStatus: 'REQUIRED' | 'PAID' | 'CONSUMED';
+  reviewPaymentStatus: 'NOT_REQUIRED' | 'REQUIRED' | 'PAID' | 'CONSUMED';
   reviewPaymentTxHash?: string;
   reviewPaidAt?: string;
   reviewConsumedAt?: string;

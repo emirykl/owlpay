@@ -32,7 +32,7 @@ export const createBountySchema = z.object({
   repositoryUrl: z.string().url().regex(/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/),
   ownerAddress: addressSchema,
   rewardAmount: z.string().regex(/^\d+(\.\d{1,6})?$/),
-  reviewPlan: z.enum(['STANDARD', 'SECURITY']).default('STANDARD'),
+  reviewPlan: z.enum(['NONE', 'STANDARD', 'SECURITY']).default('STANDARD'),
   deadline: z.string().datetime(),
   criteria: z.array(criterionSchema).min(1).max(20)
 }).superRefine((value, context) => {
@@ -80,7 +80,7 @@ export type VerificationInput = z.infer<typeof verificationInputSchema>;
 export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
 export type ReviewPlan = CreateBountyInput['reviewPlan'];
-export type ReviewPaymentStatus = 'REQUIRED' | 'PAID' | 'CONSUMED';
+export type ReviewPaymentStatus = 'NOT_REQUIRED' | 'REQUIRED' | 'PAID' | 'CONSUMED';
 
 export interface BountyApplication {
   id: string;

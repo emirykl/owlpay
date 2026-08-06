@@ -49,8 +49,12 @@ export class BountyService {
       createdAt: new Date().toISOString(),
       ownerUserId: actor.id,
       applicantCount: 0,
-      reviewPrice: input.reviewPlan === 'SECURITY' ? this.reviewConfig.securityPrice : this.reviewConfig.standardPrice,
-      reviewPaymentStatus: 'REQUIRED'
+      reviewPrice: input.reviewPlan === 'NONE'
+        ? '0'
+        : input.reviewPlan === 'SECURITY'
+          ? this.reviewConfig.securityPrice
+          : this.reviewConfig.standardPrice,
+      reviewPaymentStatus: input.reviewPlan === 'NONE' ? 'NOT_REQUIRED' : 'REQUIRED'
     };
     await this.repository.save(bounty);
     return bounty;
@@ -59,6 +63,9 @@ export class BountyService {
   async getReviewPaymentRequirement(id: string, actor: AuthUser) {
     const bounty = await this.get(id);
     this.assertOwner(bounty, actor.id);
+    if (bounty.reviewPlan === 'NONE' || bounty.reviewPaymentStatus === 'NOT_REQUIRED') {
+      throw new DomainError('This bounty uses free manual review', 409, 'MANUAL_REVIEW_SELECTED');
+    }
     if (!this.reviewConfig.paymentToken || !this.reviewConfig.treasury) {
       throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED');
     }
@@ -88,6 +95,9 @@ export class BountyService {
   async confirmReviewPayment(id: string, txHash: `0x${string}`, actor: AuthUser) {
     const bounty = await this.get(id);
     this.assertOwner(bounty, actor.id);
+    if (bounty.reviewPlan === 'NONE' || bounty.reviewPaymentStatus === 'NOT_REQUIRED') {
+      throw new DomainError('This bounty uses free manual review', 409, 'MANUAL_REVIEW_SELECTED');
+    }
     if (bounty.reviewPaymentStatus !== 'REQUIRED') {
       if (bounty.reviewPaymentTxHash?.toLowerCase() === txHash.toLowerCase()) return bounty;
       throw new DomainError('The review package is already paid', 409, 'REVIEW_ALREADY_PAID');
@@ -228,6 +238,7 @@ export class BountyService {
       throw new DomainError('Bounty has no submission ready for verification');
     }
     if (input.commitSha && input.commitSha !== bounty.submission.commitSha) throw new DomainError('Agent report is bound to a different commit', 400, 'COMMIT_MISMATCH');
+    if (bounty.reviewPlan === 'NONE') throw new DomainError('This bounty uses manual review', 409, 'MANUAL_REVIEW_SELECTED');
     if (bounty.reviewPaymentStatus !== 'PAID') throw new DomainError('The maintainer must purchase the review package first', 402, 'REVIEW_PAYMENT_REQUIRED');
     const decision = this.policy.decide(bounty.criteria, input);
     const updated: Bounty = {
@@ -252,18 +263,20 @@ export class BountyService {
     if (bounty.status !== 'SUBMITTED' || !bounty.submission) {
       throw new DomainError('Bounty has no submission ready for review', 409, 'SUBMISSION_REQUIRED');
     }
-    const input = await this.github.reviewPullRequest(bounty.submission.pullRequestUrl, bounty.criteria);
+    if (bounty.reviewPlan === 'NONE') throw new DomainError('This bounty uses manual review', 409, 'MANUAL_REVIEW_SELECTED');
+    const input = await this.github.reviewPullRequest(bounty.submission.pullRequestUrl, bounty.criteria, bounty.reviewPlan);
     return this.verify(id, input);
   }
 
   async approve(id: string, actor: AuthUser) {
     const bounty = await this.get(id);
     this.assertOwner(bounty, actor.id);
-    if (bounty.status !== 'READY_FOR_REVIEW') throw new DomainError('This bounty is not ready for maintainer approval', 409, 'NOT_READY_FOR_REVIEW');
-    if (!bounty.decision) throw new DomainError('The Owl Agent report is missing', 409, 'AGENT_REPORT_MISSING');
+    const manualReviewReady = bounty.reviewPlan === 'NONE' && bounty.status === 'SUBMITTED' && bounty.submission;
+    const agentReviewReady = bounty.reviewPlan !== 'NONE' && bounty.status === 'READY_FOR_REVIEW' && bounty.decision;
+    if (!manualReviewReady && !agentReviewReady) throw new DomainError('This bounty is not ready for maintainer approval', 409, 'NOT_READY_FOR_REVIEW');
     const payoutTxHash = await this.settlement.approveAndRelease(
       requireOnchainId(bounty, this.settlement.writesEnabled),
-      hashDecision(bounty.decision)
+      bounty.decision ? hashDecision(bounty.decision) : hashManualDecision(bounty, 'APPROVE')
     );
     const updated: Bounty = payoutTxHash
       ? { ...bounty, status: 'PAID', payoutTxHash }
@@ -275,11 +288,12 @@ export class BountyService {
   async requestRevision(id: string, actor: AuthUser) {
     const bounty = await this.get(id);
     this.assertOwner(bounty, actor.id);
-    if (bounty.status !== 'READY_FOR_REVIEW') throw new DomainError('This bounty is not ready for maintainer review', 409, 'NOT_READY_FOR_REVIEW');
-    if (!bounty.decision) throw new DomainError('The Owl Agent report is missing', 409, 'AGENT_REPORT_MISSING');
+    const manualReviewReady = bounty.reviewPlan === 'NONE' && bounty.status === 'SUBMITTED' && bounty.submission;
+    const agentReviewReady = bounty.reviewPlan !== 'NONE' && bounty.status === 'READY_FOR_REVIEW' && bounty.decision;
+    if (!manualReviewReady && !agentReviewReady) throw new DomainError('This bounty is not ready for maintainer review', 409, 'NOT_READY_FOR_REVIEW');
     await this.settlement.requestRevision(
       requireOnchainId(bounty, this.settlement.writesEnabled),
-      hashDecision(bounty.decision)
+      bounty.decision ? hashDecision(bounty.decision) : hashManualDecision(bounty, 'REVISION_REQUIRED')
     );
     const updated: Bounty = { ...bounty, status: 'REVISION_REQUIRED' };
     await this.repository.save(updated);
@@ -311,6 +325,15 @@ function hashDecision(decision: NonNullable<Bounty['decision']>): `0x${string}` 
   return `0x${createHash('sha256').update(JSON.stringify(decision)).digest('hex')}`;
 }
 
+function hashManualDecision(bounty: Bounty, action: 'APPROVE' | 'REVISION_REQUIRED'): `0x${string}` {
+  return `0x${createHash('sha256').update(JSON.stringify({
+    action,
+    bountyId: bounty.id,
+    commitSha: bounty.submission?.commitSha,
+    reviewedBy: bounty.ownerUserId
+  })).digest('hex')}`;
+}
+
 function requireOnchainId(bounty: Bounty, required: boolean) {
   if (bounty.onchainId && /^\d+$/.test(bounty.onchainId)) return bounty.onchainId;
   if (required) throw new DomainError('This bounty is not linked to a valid on-chain escrow', 409, 'ONCHAIN_BOUNTY_REQUIRED');
@@ -330,7 +353,7 @@ export interface ReviewConfig {
   securityPrice: string;
 }
 
-const defaultReviewConfig: ReviewConfig = { paymentToken: '', treasury: '', standardPrice: '2', securityPrice: '5' };
+const defaultReviewConfig: ReviewConfig = { paymentToken: '', treasury: '', standardPrice: '1', securityPrice: '2' };
 
 const unavailableReviewPaymentVerifier: ReviewPaymentVerifier = {
   async verify() { throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED'); }
