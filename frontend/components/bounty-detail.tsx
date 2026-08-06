@@ -16,6 +16,8 @@ import { IdentityButton } from './identity-button';
 import { getBountyDeadlineState } from '@/lib/bounty-deadline';
 import { getTransactionErrorMessage } from '@/lib/transaction-error';
 
+const LIVE_SYNC_INTERVAL = 4_000;
+
 export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty; onClose: () => void }) {
   const reduceMotion = useReducedMotion();
   const queryClient = useQueryClient();
@@ -25,14 +27,14 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const [applicationMessage, setApplicationMessage] = useState('');
   const [reviewInfo, setReviewInfo] = useState<'STANDARD' | 'SECURITY' | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const detail = useQuery({ queryKey: ['bounty', initialBounty.id], queryFn: () => owlpayApi.getBounty(initialBounty.id), initialData: initialBounty });
+  const detail = useQuery({ queryKey: ['bounty', initialBounty.id], queryFn: () => owlpayApi.getBounty(initialBounty.id), initialData: initialBounty, refetchInterval: LIVE_SYNC_INTERVAL, refetchIntervalInBackground: false });
   const identity = useQuery({ queryKey: ['identity'], queryFn: owlpayApi.me, enabled: configured && Boolean(user), retry: false });
   const bounty = detail.data;
   const isOwner = Boolean(user && bounty.ownerUserId === user.id);
   const isAssignedDeveloper = Boolean(user && bounty.assignedDeveloperUserId === user.id);
   const identityLinked = Boolean(address && identity.data?.wallet.verified && identity.data.wallet.walletAddress?.toLowerCase() === address.toLowerCase());
-  const applications = useQuery({ queryKey: ['bounty-applications', bounty.id], queryFn: () => owlpayApi.listBountyApplications(bounty.id), enabled: isOwner, retry: false });
-  const myApplications = useQuery({ queryKey: ['my-applications', user?.id], queryFn: owlpayApi.listMyApplications, enabled: Boolean(user) && !isOwner, retry: false });
+  const applications = useQuery({ queryKey: ['bounty-applications', bounty.id], queryFn: () => owlpayApi.listBountyApplications(bounty.id), enabled: isOwner, refetchInterval: LIVE_SYNC_INTERVAL, refetchIntervalInBackground: false, retry: false });
+  const myApplications = useQuery({ queryKey: ['my-applications', user?.id], queryFn: owlpayApi.listMyApplications, enabled: Boolean(user) && !isOwner, refetchInterval: LIVE_SYNC_INTERVAL, refetchIntervalInBackground: false, retry: false });
   const myApplication = myApplications.data?.items.find((item) => item.application.bountyId === bounty.id)?.application;
   const network = useQuery({ queryKey: ['network'], queryFn: owlpayApi.network, retry: false });
   const deadline = getBountyDeadlineState(bounty.deadline, now);
