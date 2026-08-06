@@ -168,9 +168,6 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
       ? titleValid && descriptionValid && deadlineValid
       : criterion.trim().length >= 3 && Number(rewardAmount) > 0;
 
-  const platformFeeRate = (network.data?.platformFeeBps ?? 300) / 10_000;
-  const platformFee = Number(rewardAmount || 0) * platformFeeRate;
-  const developerPayout = Math.max(0, Number(rewardAmount || 0) - platformFee);
   const reviewPrice = Number(reviewPlan === 'NONE'
     ? 0
     : reviewPlan === 'SECURITY'
@@ -296,7 +293,6 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
                       </div>
                     </div>
                   </div>
-                  <p className="fieldHint">Payout: {developerPayout.toFixed(2)} otUSDC to developer · {platformFee.toFixed(2)} otUSDC OwlPay fee ({(platformFeeRate * 100).toFixed(0)}%). {reviewPlan === 'NONE' ? 'You review the submitted PR manually.' : 'The review fee is paid now; the agent starts automatically when the PR arrives.'}</p>
                 </>
               )}
 
@@ -305,7 +301,7 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
                   <div className="stepCopy"><h3>Review & fund</h3></div>
                   <div className="reviewCard">
                     <div className="reviewMain"><span>{repositoryUrl.replace('https://github.com/', '')}</span><h3>{title}</h3><p>{description}</p></div>
-                    <div className="reviewGrid"><div><span>Escrow reward</span><strong>{rewardAmount} otUSDC</strong></div><div><span>Developer receives</span><strong>{developerPayout.toFixed(2)} otUSDC</strong></div><div><span>Platform fee</span><strong>{platformFee.toFixed(2)} otUSDC · {(platformFeeRate * 100).toFixed(0)}%</strong></div><div><span>Review method</span><strong>{reviewPlan === 'NONE' ? 'Manual · Free' : `${reviewPlan === 'SECURITY' ? 'Security' : 'Standard'} · ${reviewPrice.toFixed(2)} otUSDC paid now`}</strong></div><div><span>Deadline</span><strong>{new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(deadline))}</strong></div></div>
+                    <div className="reviewGrid"><div><span>Escrow reward</span><strong>{rewardAmount} otUSDC</strong></div><div><span>Review method</span><strong>{reviewPlan === 'NONE' ? 'Manual · Free' : `${reviewPlan === 'SECURITY' ? 'Security' : 'Standard'} · ${reviewPrice.toFixed(2)} otUSDC paid now`}</strong></div><div><span>Deadline</span><strong>{new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(deadline))}</strong></div></div>
                     <div className="reviewCriterion"><span><Check /></span><p><strong>Mandatory evidence</strong><small>{criterion}</small></p></div>
                   </div>
                   {!address && <div className="connectionGate walletGate providerGate"><span className="connectionProviderIcon metamaskConnectionIcon"><MetaMaskMark /></span><div><strong>Connect MetaMask to fund</strong><p>Your connected address becomes the bounty owner on GOAT Testnet3.</p></div><WalletButton /></div>}

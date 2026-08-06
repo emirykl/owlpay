@@ -30,8 +30,11 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const applications = useQuery({ queryKey: ['bounty-applications', bounty.id], queryFn: () => owlpayApi.listBountyApplications(bounty.id), enabled: isOwner, retry: false });
   const myApplications = useQuery({ queryKey: ['my-applications', user?.id], queryFn: owlpayApi.listMyApplications, enabled: Boolean(user) && !isOwner, retry: false });
   const myApplication = myApplications.data?.items.find((item) => item.application.bountyId === bounty.id)?.application;
+  const network = useQuery({ queryKey: ['network'], queryFn: owlpayApi.network, retry: false });
   const deadline = getBountyDeadlineState(bounty.deadline, now);
   const isClosed = bounty.status === 'OPEN' && deadline.closed;
+  const platformFeeRate = (network.data?.platformFeeBps ?? 300) / 10_000;
+  const estimatedPayout = Math.max(0, Number(bounty.rewardAmount) * (1 - platformFeeRate));
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -193,7 +196,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
 
         {isClosed && <div className="closedNotice"><strong>Applications closed</strong><p>This bounty reached its deadline and no longer accepts applications.</p></div>}
 
-        {bounty.assignedDeveloperGithubLogin && <div className="assignedNotice"><span className="statusDot" /><p><strong>Assigned to @{bounty.assignedDeveloperGithubLogin}</strong><small>Only the selected developer can submit work.</small></p></div>}
+        {bounty.assignedDeveloperGithubLogin && <div className="assignedNotice"><span className="statusDot" /><p><strong>Assigned to @{bounty.assignedDeveloperGithubLogin}</strong><small>{isAssignedDeveloper ? `Estimated payout: ${estimatedPayout.toFixed(2)} otUSDC after the ${(platformFeeRate * 100).toFixed(0)}% OwlPay fee.` : 'Only the selected developer can submit work.'}</small></p></div>}
 
         {bounty.submission && <div className="submissionCard"><span>Submitted commit</span><strong>{bounty.submission.commitSha.slice(0, 10)}</strong><a href={bounty.submission.pullRequestUrl} target="_blank" rel="noreferrer">Open pull request <ArrowUpRight /></a></div>}
 
