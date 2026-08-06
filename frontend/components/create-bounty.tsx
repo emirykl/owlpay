@@ -138,7 +138,8 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
         creationProgress.current.funded = funded;
       }
       if (reviewPlan === 'NONE' || funded.reviewPaymentStatus === 'PAID') return funded;
-      const requirement = await owlpayApi.requestReviewPayment(draft.id);
+      const paidReviewPlan = reviewPlan === 'SECURITY' ? 'SECURITY' : 'STANDARD';
+      const requirement = await owlpayApi.requestReviewPayment(draft.id, paidReviewPlan);
       const option = requirement.accepts[0];
       if (!option || option.network !== 'eip155:48816') throw new Error('No supported GOAT Testnet3 review payment option was returned.');
       const reviewPaymentHash = await sendTransaction({
@@ -146,7 +147,7 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
         data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [option.payTo, BigInt(option.amount)] })
       });
       await goatPublicClient.waitForTransactionReceipt({ hash: reviewPaymentHash });
-      const paid = await owlpayApi.confirmReviewPayment(draft.id, reviewPaymentHash);
+      const paid = await owlpayApi.confirmReviewPayment(draft.id, reviewPaymentHash, paidReviewPlan);
       creationProgress.current.funded = paid;
       return paid;
     },
@@ -335,13 +336,33 @@ function ReviewPlanChoice({ checked, description, label, price, value, onChange 
   value: ReviewPlan;
   onChange: (value: ReviewPlan) => void;
 }) {
+  const reduceMotion = useReducedMotion();
+  const [showInfo, setShowInfo] = useState(false);
   return (
-    <label className={`reviewPlanChoice ${checked ? 'selected' : ''}`}>
+    <motion.label
+      className={`reviewPlanChoice plan-${value.toLowerCase()} ${checked ? 'selected' : ''}`}
+      whileHover={reduceMotion ? undefined : { y: -3, scale: 1.01 }}
+      transition={{ type: 'spring', stiffness: 360, damping: 25 }}
+    >
       <input type="radio" name="reviewPlan" value={value} checked={checked} onChange={() => onChange(value)} />
       <span><strong>{label}</strong><small>{price}</small></span>
-      <span className="reviewHelp" tabIndex={0} aria-label={`${label} review information`}>?
+      <span
+        className={`reviewHelp ${showInfo ? 'open' : ''}`}
+        role="button"
+        tabIndex={0}
+        aria-label={`${label} review information`}
+        aria-expanded={showInfo}
+        onClick={(event) => { event.preventDefault(); event.stopPropagation(); setShowInfo((open) => !open); }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            event.stopPropagation();
+            setShowInfo((open) => !open);
+          }
+        }}
+      >?
         <span role="tooltip">{description}</span>
       </span>
-    </label>
+    </motion.label>
   );
 }

@@ -129,8 +129,10 @@ export interface Bounty extends CreateBountyInput {
   assignmentTxHash?: string;
   applicantCount: number;
   reviewPrice: string;
+  reviewPaidAmount: string;
   reviewPaymentStatus: ReviewPaymentStatus;
   reviewPaymentTxHash?: string;
+  reviewPaymentTxHashes: string[];
   reviewPaidAt?: string;
   reviewConsumedAt?: string;
   submission?: Submission;

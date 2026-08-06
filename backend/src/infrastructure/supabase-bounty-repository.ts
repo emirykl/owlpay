@@ -13,8 +13,10 @@ interface BountyRow {
   verification_budget: string | number;
   review_plan: ReviewPlan;
   review_price: string | number;
+  review_paid_amount: string | number | null;
   review_payment_status: ReviewPaymentStatus;
   review_payment_tx_hash: string | null;
+  review_payment_tx_hashes: string[] | null;
   review_paid_at: string | null;
   review_consumed_at: string | null;
   deadline: string;
@@ -64,7 +66,9 @@ function fromRow(row: BountyRow): Bounty {
     rewardAmount: String(row.reward_amount),
     reviewPlan: row.review_plan ?? 'STANDARD',
     reviewPrice: String(row.review_price ?? 2),
+    reviewPaidAmount: String(row.review_paid_amount ?? (['PAID', 'CONSUMED'].includes(row.review_payment_status) ? row.review_price : 0)),
     reviewPaymentStatus: row.review_payment_status ?? 'REQUIRED',
+    reviewPaymentTxHashes: row.review_payment_tx_hashes ?? (row.review_payment_tx_hash ? [row.review_payment_tx_hash] : []),
     deadline: new Date(row.deadline).toISOString(),
     criteria: row.criteria,
     status: row.status,
@@ -100,8 +104,10 @@ function toRow(bounty: Bounty) {
     verification_budget: 0,
     review_plan: bounty.reviewPlan,
     review_price: bounty.reviewPrice,
+    review_paid_amount: bounty.reviewPaidAmount,
     review_payment_status: bounty.reviewPaymentStatus,
     review_payment_tx_hash: bounty.reviewPaymentTxHash ?? null,
+    review_payment_tx_hashes: bounty.reviewPaymentTxHashes,
     review_paid_at: bounty.reviewPaidAt ?? null,
     review_consumed_at: bounty.reviewConsumedAt ?? null,
     deadline: bounty.deadline,

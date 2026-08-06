@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { parseUnits } from 'viem';
 import { DomainError } from '../domain/errors.js';
-import type { Bounty, BountyApplication, CreateApplicationInput, CreateBountyInput, SubmitWorkInput, VerificationInput } from '../domain/schemas.js';
+import type { Bounty, BountyApplication, CreateApplicationInput, CreateBountyInput, ReviewPlan, SubmitWorkInput, VerificationInput } from '../domain/schemas.js';
 import type { ApplicationRepository, BountyRepository, GitHubEvidenceProvider, PullRequestEvidence, ReviewPaymentVerifier, SettlementGateway } from './ports.js';
 import type { VerificationPolicy } from './verification-policy.js';
 import type { AuthUser } from './auth.js';
@@ -54,36 +54,37 @@ export class BountyService {
         : input.reviewPlan === 'SECURITY'
           ? this.reviewConfig.securityPrice
           : this.reviewConfig.standardPrice,
-      reviewPaymentStatus: input.reviewPlan === 'NONE' ? 'NOT_REQUIRED' : 'REQUIRED'
+      reviewPaidAmount: '0',
+      reviewPaymentStatus: input.reviewPlan === 'NONE' ? 'NOT_REQUIRED' : 'REQUIRED',
+      reviewPaymentTxHashes: []
     };
     await this.repository.save(bounty);
     return bounty;
   }
 
-  async getReviewPaymentRequirement(id: string, actor: AuthUser) {
+  async getReviewPaymentRequirement(id: string, actor: AuthUser, requestedPlan?: ReviewPlan) {
     const bounty = await this.get(id);
     this.assertOwner(bounty, actor.id);
-    if (bounty.reviewPlan === 'NONE' || bounty.reviewPaymentStatus === 'NOT_REQUIRED') {
-      throw new DomainError('This bounty uses free manual review', 409, 'MANUAL_REVIEW_SELECTED');
-    }
+    const targetPlan = requirePaidReviewPlan(requestedPlan ?? bounty.reviewPlan);
     if (!this.reviewConfig.paymentToken || !this.reviewConfig.treasury) {
       throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED');
     }
-    if (bounty.reviewPaymentStatus !== 'REQUIRED') {
-      throw new DomainError('The review package is already paid', 409, 'REVIEW_ALREADY_PAID');
-    }
+    const payment = this.calculateReviewUpgrade(bounty, targetPlan);
     return {
       x402Version: 2,
-      orderId: bounty.id,
+      orderId: `${bounty.id}:${targetPlan}`,
+      targetPlan,
+      currentPaidAmount: bounty.reviewPaidAmount,
+      paymentAmount: payment.amount,
       resource: {
         url: `/api/bounties/${bounty.id}/review-payment`,
-        description: `${bounty.reviewPlan === 'SECURITY' ? 'Security' : 'Standard'} Owl Agent review for ${bounty.title}`,
+        description: `${targetPlan === 'SECURITY' ? 'Security' : 'Standard'} Owl Agent review for ${bounty.title}`,
         mimeType: 'application/json'
       },
       accepts: [{
         scheme: 'exact',
         network: 'eip155:48816',
-        amount: parseUnits(bounty.reviewPrice, 6).toString(),
+        amount: parseUnits(payment.amount, 6).toString(),
         asset: this.reviewConfig.paymentToken,
         payTo: this.reviewConfig.treasury,
         maxTimeoutSeconds: 900,
@@ -92,32 +93,35 @@ export class BountyService {
     };
   }
 
-  async confirmReviewPayment(id: string, txHash: `0x${string}`, actor: AuthUser) {
+  async confirmReviewPayment(id: string, txHash: `0x${string}`, actor: AuthUser, requestedPlan?: ReviewPlan) {
     const bounty = await this.get(id);
     this.assertOwner(bounty, actor.id);
-    if (bounty.reviewPlan === 'NONE' || bounty.reviewPaymentStatus === 'NOT_REQUIRED') {
-      throw new DomainError('This bounty uses free manual review', 409, 'MANUAL_REVIEW_SELECTED');
-    }
-    if (bounty.reviewPaymentStatus !== 'REQUIRED') {
-      if (bounty.reviewPaymentTxHash?.toLowerCase() === txHash.toLowerCase()) return bounty;
-      throw new DomainError('The review package is already paid', 409, 'REVIEW_ALREADY_PAID');
-    }
+    const targetPlan = requirePaidReviewPlan(requestedPlan ?? bounty.reviewPlan);
+    if (bounty.reviewPaymentTxHashes.some((hash) => hash.toLowerCase() === txHash.toLowerCase())) return bounty;
     if (actor.id !== bounty.ownerUserId || !this.reviewConfig.paymentToken || !this.reviewConfig.treasury) {
       throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED');
     }
-    const reused = (await this.repository.list()).some((item) => item.reviewPaymentTxHash?.toLowerCase() === txHash.toLowerCase());
+    const payment = this.calculateReviewUpgrade(bounty, targetPlan);
+    const reused = (await this.repository.list()).some((item) =>
+      item.reviewPaymentTxHash?.toLowerCase() === txHash.toLowerCase()
+      || item.reviewPaymentTxHashes.some((hash) => hash.toLowerCase() === txHash.toLowerCase())
+    );
     if (reused) throw new DomainError('This transaction has already purchased a review', 409, 'PAYMENT_ALREADY_USED');
     await this.reviewPayments.verify({
       txHash,
       payer: bounty.ownerAddress as `0x${string}`,
       token: this.reviewConfig.paymentToken,
       payTo: this.reviewConfig.treasury,
-      amount: parseUnits(bounty.reviewPrice, 6)
+      amount: parseUnits(payment.amount, 6)
     });
     const updated: Bounty = {
       ...bounty,
+      reviewPlan: targetPlan,
+      reviewPrice: payment.targetPrice,
+      reviewPaidAmount: payment.targetPrice,
       reviewPaymentStatus: 'PAID',
       reviewPaymentTxHash: txHash,
+      reviewPaymentTxHashes: [...bounty.reviewPaymentTxHashes, txHash],
       reviewPaidAt: new Date().toISOString()
     };
     await this.repository.save(updated);
@@ -311,6 +315,22 @@ export class BountyService {
   private assertOwner(bounty: Bounty, actorUserId: string) {
     if (!bounty.ownerUserId || bounty.ownerUserId !== actorUserId) throw new DomainError('Only the bounty owner can perform this action', 403, 'FORBIDDEN');
   }
+
+  private calculateReviewUpgrade(bounty: Bounty, targetPlan: Exclude<ReviewPlan, 'NONE'>) {
+    if (bounty.reviewPaymentStatus === 'CONSUMED') {
+      throw new DomainError('The purchased review has already been used', 409, 'REVIEW_ALREADY_CONSUMED');
+    }
+    const targetPrice = targetPlan === 'SECURITY' ? this.reviewConfig.securityPrice : this.reviewConfig.standardPrice;
+    const targetUnits = parseUnits(targetPrice, 6);
+    const paidUnits = parseUnits(bounty.reviewPaidAmount || '0', 6);
+    if (targetUnits <= paidUnits) {
+      throw new DomainError('This review level is already active', 409, 'REVIEW_ALREADY_PAID');
+    }
+    if (bounty.reviewPlan === 'SECURITY' && paidUnits > 0n && targetPlan === 'STANDARD') {
+      throw new DomainError('A Security review cannot be downgraded', 409, 'REVIEW_DOWNGRADE_NOT_ALLOWED');
+    }
+    return { amount: formatTokenUnits(targetUnits - paidUnits), targetPrice };
+  }
 }
 
 function normalizeRepository(value: string) {
@@ -358,3 +378,14 @@ const defaultReviewConfig: ReviewConfig = { paymentToken: '', treasury: '', stan
 const unavailableReviewPaymentVerifier: ReviewPaymentVerifier = {
   async verify() { throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED'); }
 };
+
+function requirePaidReviewPlan(plan: ReviewPlan): Exclude<ReviewPlan, 'NONE'> {
+  if (plan === 'STANDARD' || plan === 'SECURITY') return plan;
+  throw new DomainError('Choose Standard or Security to purchase an Owl Agent review', 400, 'PAID_REVIEW_PLAN_REQUIRED');
+}
+
+function formatTokenUnits(units: bigint) {
+  const whole = units / 1_000_000n;
+  const fraction = (units % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '');
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}
