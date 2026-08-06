@@ -36,8 +36,12 @@ export const createBountySchema = z.object({
   deadline: z.string().datetime(),
   criteria: z.array(criterionSchema).min(1).max(20)
 }).superRefine((value, context) => {
-  if (new Date(value.deadline).getTime() <= Date.now()) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['deadline'], message: 'Deadline must be in the future' });
+  const deadline = new Date(value.deadline).getTime();
+  if (deadline < Date.now() + 3_600_000) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['deadline'], message: 'Deadline must be at least 1 hour from now' });
+  }
+  if (deadline > Date.now() + 7 * 24 * 3_600_000) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['deadline'], message: 'Deadline must be within the next 7 days' });
   }
 });
 
