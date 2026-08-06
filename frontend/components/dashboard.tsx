@@ -20,6 +20,7 @@ type ExploreStatus = 'ALL' | BountyStatus;
 type ExploreSort = 'RECENT' | 'REWARD_HIGH' | 'DEADLINE';
 
 const exploreStatuses: ExploreStatus[] = ['ALL', 'OPEN', 'ASSIGNED', 'SUBMITTED', 'VERIFYING', 'READY_FOR_REVIEW', 'PAID'];
+const LIVE_SYNC_INTERVAL = 4_000;
 
 const statusLabels: Record<BountyStatus, string> = {
   DRAFT: 'Draft', OPEN: 'Open', ASSIGNED: 'Assigned', SUBMITTED: 'Submitted', VERIFYING: 'Verifying', READY_FOR_REVIEW: 'Ready for review',
@@ -55,8 +56,8 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
   const [exploreRepository, setExploreRepository] = useState('');
   const [exploreSort, setExploreSort] = useState<ExploreSort>('RECENT');
   const [now, setNow] = useState(() => Date.now());
-  const bounties = useQuery({ queryKey: ['bounties'], queryFn: owlpayApi.listBounties, retry: 1 });
-  const myApplications = useQuery({ queryKey: ['my-applications', userId], queryFn: owlpayApi.listMyApplications, enabled: view === 'applications' && Boolean(userId), retry: false });
+  const bounties = useQuery({ queryKey: ['bounties'], queryFn: owlpayApi.listBounties, refetchInterval: LIVE_SYNC_INTERVAL, refetchIntervalInBackground: false, retry: 1 });
+  const myApplications = useQuery({ queryKey: ['my-applications', userId], queryFn: owlpayApi.listMyApplications, enabled: view === 'applications' && Boolean(userId), refetchInterval: LIVE_SYNC_INTERVAL, refetchIntervalInBackground: false, retry: false });
   const network = useQuery({ queryKey: ['network'], queryFn: owlpayApi.network, refetchInterval: 30_000, retry: 1 });
   const items = useMemo(() => bounties.data?.items ?? [], [bounties.data?.items]);
   const publicItems = useMemo(() => items.filter((item) => item.status !== 'DRAFT'), [items]);
