@@ -186,30 +186,37 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   return (
     <div className="modalBackdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="modal detailModal" role="dialog" aria-modal="true" aria-labelledby="bounty-title">
-        <div className="modalHeader detailHeader">
-          <div>
-            <span className={`eyebrow ${isClosed ? 'closedText closedBadge' : ''}`}>{isClosed ? 'CLOSED' : bounty.status.replaceAll('_', ' ')}</span>
-            <div className="detailRepository"><span className="detailRepositoryAvatar" style={{ backgroundImage: `url(${repository.avatarUrl})` }} /><strong>{repository.fullName}</strong></div>
-            <h2 id="bounty-title">{bounty.title}</h2><p>{bounty.description}</p>
-          </div>
+        <div className="detailTopbar">
+          <span className={`detailStatusBadge detailStatus-${isClosed ? 'closed' : bounty.status.toLowerCase()}`}>{isClosed ? 'CLOSED' : bounty.status.replaceAll('_', ' ')}</span>
           <button className="iconButton" onClick={onClose} aria-label="Close">×</button>
         </div>
 
-        <div className="detailStats">
-          <div><span>Reward</span><strong>{bounty.rewardAmount} otUSDC</strong></div>
-          {!isClosed && <div><span>Applications</span><strong>{bounty.applicantCount}</strong></div>}
-          <div><span>Deadline</span><strong>{deadlineLabel}</strong></div>
+        <div className="detailOverviewCard">
+          <div className="detailHeader">
+            <a className="detailRepository" href={bounty.repositoryUrl} target="_blank" rel="noreferrer">
+              <span className="detailRepositoryAvatar" style={{ backgroundImage: `url(${repository.avatarUrl})` }} />
+              <strong>{repository.fullName}</strong>
+              <ArrowUpRight />
+            </a>
+            <h2 id="bounty-title">{bounty.title}</h2>
+            <p>{bounty.description}</p>
+          </div>
+          <dl className="detailStats">
+            <div><dt>Reward</dt><dd>{bounty.rewardAmount} otUSDC</dd></div>
+            {!isClosed && <div><dt>Applications</dt><dd>{bounty.applicantCount}</dd></div>}
+            <div><dt>Deadline</dt><dd>{deadlineLabel}</dd></div>
+          </dl>
         </div>
 
-        <div className="detailSection">
+        <div className="detailSection detailCardSection criteriaSection">
           <div className="detailSectionTitle"><h3>Acceptance criteria</h3></div>
           <div className="criteriaList">{bounty.criteria.map((criterion) => <div key={criterion.id}><span className="criteriaIcon"><Check /></span><p><strong>{criterion.description}</strong></p></div>)}</div>
         </div>
 
         {isOwner && !isClosed && ['OPEN', 'ASSIGNED'].includes(bounty.status) && (
-          <div className="detailSection">
-            <div className="detailSectionTitle"><h3>Applications</h3><span>{applications.data?.items.length ?? 0} candidates</span></div>
-            {applications.isLoading ? <div className="loadingRows"><i /><i /></div> : applications.data?.items.length === 0 ? <p className="inlineNotice">No applications yet.</p> : (
+          <div className="detailSection detailCardSection applicationsSection">
+            <div className="detailSectionTitle"><h3>Applications</h3><span className="sectionCount">{applications.data?.items.length ?? 0}</span></div>
+            {applications.isLoading ? <div className="loadingRows"><i /><i /></div> : applications.data?.items.length === 0 ? <p className="inlineNotice applicationEmpty">No applications yet.</p> : (
               <div className="candidateList">{applications.data?.items.map((application) => <article className="candidateCard" key={application.id}>
                 <span className="candidateAvatar" style={application.developerGithubAvatarUrl ? { backgroundImage: `url(${application.developerGithubAvatarUrl})` } : undefined}>{application.developerGithubLogin.slice(0, 1).toUpperCase()}</span>
                 <div><strong>@{application.developerGithubLogin}</strong><p>{application.message}</p><small>{application.developerAddress.slice(0, 7)}…{application.developerAddress.slice(-5)}</small></div>
@@ -221,8 +228,8 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
         )}
 
         {bounty.status === 'OPEN' && !isOwner && !isClosed && (
-          <div className="detailSection applicationSection">
-            <div className="detailSectionTitle"><h3>Apply for this bounty</h3><span>Send a short note to the maintainer</span></div>
+          <div className="detailSection detailCardSection applicationSection">
+            <div className="detailSectionTitle"><h3>Apply for this bounty</h3></div>
             {configured && !user ? <button className="secondaryButton providerAction" onClick={signIn}><GitHubMark />Connect GitHub</button> : !address ? (
               <div className="connectionGate providerGate"><span className="connectionProviderIcon metamaskConnectionIcon"><MetaMaskMark /></span><div><strong>Connect MetaMask</strong><p>Your verified wallet becomes the payout address if you are selected.</p></div><WalletButton /></div>
             ) : configured && !identityLinked ? (
@@ -242,13 +249,13 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
 
         {canUpgradeReview && !securityActive && (
           <div className="reviewUpgradeSection">
-            <div className="reviewUpgradeHeading"><span>Owl Agent</span><strong>{standardActive ? 'Upgrade review' : 'Automated review'}</strong></div>
+            <div className="reviewUpgradeHeading"><h3>AI Review</h3>{standardActive && <span>Standard active</span>}</div>
             <div className="reviewUpgradeGrid">
               <motion.article className={`reviewPackageCard standardPackageCard ${standardActive ? 'active' : ''}`} whileHover={reduceMotion || standardActive ? undefined : { y: -3 }} transition={{ type: 'spring', stiffness: 360, damping: 28 }}>
                 <button type="button" className="reviewPackageAction" onClick={() => purchaseReviewMutation.mutate('STANDARD')} disabled={purchaseReviewMutation.isPending || standardActive}>
                   <span className="reviewPackageLogo"><ReviewOwlLogo tone="standard" /></span>
                   <span className="reviewPackageCopy"><strong>Standard review</strong></span>
-                  <span className="reviewPackagePrice">{standardActive ? 'Active' : purchaseReviewMutation.isPending && purchaseReviewMutation.variables === 'STANDARD' ? 'Opening MetaMask…' : `${Math.max(0, standardPrice - paidReviewAmount)} otUSDC`}</span>
+                  <span className="reviewPackagePrice">{standardActive ? 'Active' : `${Math.max(0, standardPrice - paidReviewAmount)} otUSDC`}</span>
                 </button>
                 <button type="button" className="reviewPackageInfoButton" aria-label="Show Standard review details" aria-haspopup="dialog" aria-expanded={reviewInfo === 'STANDARD'} onClick={() => setReviewInfo('STANDARD')}>?</button>
               </motion.article>
@@ -256,22 +263,19 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
                 <button type="button" className="reviewPackageAction" onClick={() => purchaseReviewMutation.mutate('SECURITY')} disabled={purchaseReviewMutation.isPending}>
                   <span className="reviewPackageLogo"><ReviewOwlLogo tone="security" /></span>
                   <span className="reviewPackageCopy"><strong>Security review</strong></span>
-                  <span className="reviewPackagePrice">{purchaseReviewMutation.isPending && purchaseReviewMutation.variables === 'SECURITY' ? 'Opening MetaMask…' : `${Math.max(0, securityPrice - paidReviewAmount)} otUSDC${standardActive ? ' upgrade' : ''}`}</span>
+                  <span className="reviewPackagePrice">{Math.max(0, securityPrice - paidReviewAmount)} otUSDC</span>
                 </button>
                 <button type="button" className="reviewPackageInfoButton" aria-label="Show Security review details" aria-haspopup="dialog" aria-expanded={reviewInfo === 'SECURITY'} onClick={() => setReviewInfo('SECURITY')}>?</button>
               </motion.article>
             </div>
-            <div className={`reviewUpgradeFooter ${bounty.reviewPlan === 'NONE' && paidReviewAmount === 0 ? 'manualReviewFooter' : ''}`}>
-              <p>{bounty.reviewPlan === 'NONE' && paidReviewAmount === 0 ? <><strong>Manual review is active.</strong> Review the submitted PR yourself; approval releases escrow automatically.</> : 'One-time payment. The selected review starts when a pull request is submitted.'}</p>
-              {standardActive && bounty.status === 'SUBMITTED' && <button className="secondaryButton" onClick={() => agentReviewMutation.mutate()} disabled={agentReviewMutation.isPending}>{agentReviewMutation.isPending ? 'Analyzing…' : 'Run Standard review'}</button>}
-            </div>
+            {standardActive && bounty.status === 'SUBMITTED' && <div className="reviewUpgradeFooter"><button className="secondaryButton" onClick={() => agentReviewMutation.mutate()} disabled={agentReviewMutation.isPending}>{agentReviewMutation.isPending ? 'Analyzing…' : 'Run Standard review'}</button></div>}
           </div>
         )}
         {isOwner && securityActive && bounty.reviewPaymentStatus === 'PAID' && (
-          <div className="activeReviewPlan securityActivePlan"><span className="reviewPackageLogo"><ReviewOwlLogo tone="security" /></span><div><small>ACTIVE REVIEW</small><strong>Security review ready</strong></div>{bounty.status === 'SUBMITTED' && <button className="primaryButton" onClick={() => agentReviewMutation.mutate()} disabled={agentReviewMutation.isPending}>{agentReviewMutation.isPending ? 'Analyzing…' : 'Run Owl Agent'}</button>}</div>
+          <div className="reviewUpgradeSection activeReviewSection"><div className="reviewUpgradeHeading"><h3>AI Review</h3></div><div className="activeReviewPlan securityActivePlan"><span className="reviewPackageLogo"><ReviewOwlLogo tone="security" /></span><div><small>ACTIVE</small><strong>Security review</strong></div>{bounty.status === 'SUBMITTED' && <button className="primaryButton" onClick={() => agentReviewMutation.mutate()} disabled={agentReviewMutation.isPending}>{agentReviewMutation.isPending ? 'Analyzing…' : 'Run review'}</button>}</div></div>
         )}
         {isOwner && standardActive && !canUpgradeReview && bounty.reviewPaymentStatus === 'PAID' && (
-          <div className="activeReviewPlan standardActivePlan"><span className="reviewPackageLogo"><ReviewOwlLogo tone="standard" /></span><div><small>ACTIVE REVIEW</small><strong>Standard review ready</strong></div>{bounty.status === 'SUBMITTED' && <button className="primaryButton" onClick={() => agentReviewMutation.mutate()} disabled={agentReviewMutation.isPending}>{agentReviewMutation.isPending ? 'Analyzing…' : 'Run Owl Agent'}</button>}</div>
+          <div className="reviewUpgradeSection activeReviewSection"><div className="reviewUpgradeHeading"><h3>AI Review</h3></div><div className="activeReviewPlan standardActivePlan"><span className="reviewPackageLogo"><ReviewOwlLogo tone="standard" /></span><div><small>ACTIVE</small><strong>Standard review</strong></div>{bounty.status === 'SUBMITTED' && <button className="primaryButton" onClick={() => agentReviewMutation.mutate()} disabled={agentReviewMutation.isPending}>{agentReviewMutation.isPending ? 'Analyzing…' : 'Run review'}</button>}</div></div>
         )}
         {purchaseReviewMutation.error && <p className="formError" role="alert">{purchaseReviewMutation.error.message}</p>}
         {agentReviewMutation.error && <p className="formError" role="alert">{agentReviewMutation.error.message}</p>}
@@ -292,7 +296,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
         {reviewMutation.error && <p className="formError" role="alert">{reviewMutation.error.message}</p>}
         {success && <p className="formSuccess" role="status">{success}</p>}
 
-        <div className="detailFooter"><a href={bounty.repositoryUrl} target="_blank" rel="noreferrer">GitHub repository <ArrowUpRight /></a>{bounty.fundingTxHash && <a href={`${goatTestnet.blockExplorers.default.url}/tx/${bounty.fundingTxHash}`} target="_blank" rel="noreferrer">Funding transaction <ArrowUpRight /></a>}{bounty.payoutTxHash && <a href={`${goatTestnet.blockExplorers.default.url}/tx/${bounty.payoutTxHash}`} target="_blank" rel="noreferrer">Payout transaction <ArrowUpRight /></a>}</div>
+        {(bounty.fundingTxHash || bounty.payoutTxHash) && <div className="detailFooter">{bounty.fundingTxHash && <a href={`${goatTestnet.blockExplorers.default.url}/tx/${bounty.fundingTxHash}`} target="_blank" rel="noreferrer">Funding transaction <ArrowUpRight /></a>}{bounty.payoutTxHash && <a href={`${goatTestnet.blockExplorers.default.url}/tx/${bounty.payoutTxHash}`} target="_blank" rel="noreferrer">Payout transaction <ArrowUpRight /></a>}</div>}
       </section>
       <AnimatePresence>
         {reviewInfo && <ReviewPackageInfoModal key={reviewInfo} plan={reviewInfo} onClose={() => setReviewInfo(null)} />}
@@ -313,10 +317,9 @@ function ReviewPackageInfoModal({ plan, onClose }: { plan: 'STANDARD' | 'SECURIT
         <span className="reviewInfoEyebrow">Owl Agent</span>
         <div className="reviewInfoHero">
           <span className="reviewPackageLogo"><ReviewOwlLogo tone={isSecurity ? 'security' : 'standard'} /></span>
-          <div><h3 id="review-info-title">{isSecurity ? 'Security review' : 'Standard review'}</h3><p>{isSecurity ? 'A deeper automated review for sensitive changes.' : 'A focused automated check for bounty delivery.'}</p></div>
+          <h3 id="review-info-title">{isSecurity ? 'Security review' : 'Standard review'}</h3>
         </div>
         <div className="reviewInfoChecks">{checks.map((check, index) => <div key={check}><span>{index + 1}</span><strong>{check}</strong></div>)}</div>
-        <p className="reviewInfoFoot">Runs automatically when the assigned developer submits a pull request.</p>
       </motion.section>
     </motion.div>
   );
