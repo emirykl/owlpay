@@ -176,6 +176,10 @@ a { color: inherit; text-decoration: none; }
 .formSuccess { color: var(--green); background: #edf5ef; border-radius: 12px; padding: 12px; margin: 12px 0 0; font-size: 12px; }
 .detailModal { width: min(780px, 100%); }
 .detailHeader p { color: var(--muted); line-height: 1.6; margin: 12px 0 0; max-width: 620px; }
+.detailRepository { margin-bottom: 12px; display: flex; align-items: center; gap: 9px; }
+.detailRepositoryAvatar { width: 32px; height: 32px; border: 1px solid rgba(18,19,15,.08); border-radius: 10px; background: #ecece8 center / cover no-repeat; box-shadow: 0 6px 18px rgba(18,19,15,.08); }
+.detailRepository strong { font-size: 11px; }
+.closedBadge { width: fit-content; margin-bottom: 12px; padding: 6px 10px; border: 2px solid #b42318; border-radius: 999px; background: #fff3f2; color: #b42318; font-weight: 900; letter-spacing: .16em; }
 .detailStats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 28px; }
 .detailStats > div { background: white; border: 1px solid var(--line); border-radius: 16px; padding: 16px; display: grid; gap: 8px; }
 .detailStats span, .submissionCard > span { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
@@ -413,6 +417,61 @@ a { color: inherit; text-decoration: none; }
 .maintainerReview strong { font-size: 12px; }
 .maintainerReview p { margin: 0; color: var(--muted); font-size: 10px; }
 .maintainerReview > div:last-child { display: flex; gap: 8px; flex: 0 0 auto; }
+.reviewUpgradeSection { margin-top: 20px; padding: 17px; position: relative; border: 1px solid #e3e4df; border-radius: 20px; background: rgba(255,255,253,.94); box-shadow: 0 14px 38px rgba(18,19,15,.05); }
+.reviewUpgradeHeading { margin-bottom: 14px; display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.reviewUpgradeHeading span { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.reviewUpgradeHeading strong { font-size: 14px; letter-spacing: -.02em; }
+.reviewUpgradeGrid { display: grid; grid-template-columns: repeat(2,minmax(220px,320px)); justify-content: start; gap: 10px; }
+.reviewPackageCard { min-width: 0; position: relative; overflow: hidden; border: 1px solid #dfe1dc; border-radius: 16px; background: #fbfbf9; box-shadow: inset 0 1px 0 rgba(255,255,255,.95),0 7px 18px rgba(18,19,15,.045); transition: border-color .2s,box-shadow .2s,background .2s; }
+.reviewPackageCard::before { content: ""; width: 54%; height: 180%; position: absolute; top: -65%; left: -27%; pointer-events: none; transform: rotate(23deg); background: linear-gradient(90deg,transparent,rgba(255,255,255,.7),transparent); }
+.reviewPackageCard:hover { border-color: #c2c5be; box-shadow: inset 0 1px 0 white,0 13px 30px rgba(18,19,15,.075); }
+.standardPackageCard { border-color: #bfc6cf; background: linear-gradient(145deg,#fff 0%,#eef1f4 54%,#dce1e7 120%); }
+.securityPackageCard { border-color: #d9ad2f; background: linear-gradient(145deg,#fffdf3 0%,#fceaa7 58%,#edc64d 135%); box-shadow: inset 0 1px 0 white,0 9px 24px rgba(167,113,5,.1); }
+.securityPackageCard:hover { border-color: #b8870c; box-shadow: inset 0 1px 0 white,0 14px 32px rgba(167,113,5,.16); }
+.reviewPackageCard.active { border-color: #9ca29a; background: #f4f6f4; }
+.reviewPackageAction { width: 100%; min-height: 96px; padding: 15px 15px; position: relative; z-index: 1; border: 0; background: transparent; display: grid; grid-template-columns: auto minmax(0,1fr); grid-template-rows: 1fr auto; align-items: center; column-gap: 14px; row-gap: 3px; color: var(--ink); text-align: left; }
+.reviewPackageAction:disabled { cursor: default; opacity: 1; }
+.reviewPackageLogo { width: 48px; height: 58px; flex: 0 0 auto; overflow: hidden; display: grid; place-items: center; }
+.reviewPackageAction > .reviewPackageLogo { grid-row: 1 / 3; align-self: center; }
+.reviewPackageLogo svg { width: 40px; height: 52px; filter: drop-shadow(0 4px 5px rgba(18,19,15,.1)); }
+.securityPackageCard .reviewPackageLogo svg,.securityActivePlan .reviewPackageLogo svg { filter: drop-shadow(0 5px 7px rgba(150,99,0,.2)); }
+.reviewPackageCopy { min-width: 0; padding-right: 30px; align-self: end; }
+.reviewPackageCopy strong { font-size: 16px; font-weight: 820; letter-spacing: -.025em; }
+.reviewPackagePrice { grid-column: 2; justify-self: end; align-self: start; width: fit-content; color: #216d48; font-size: 13px; font-weight: 850; letter-spacing: -.015em; white-space: nowrap; }
+.securityPackageCard .reviewPackagePrice { color: #216d48; }
+.reviewPackageInfoButton { width: 22px; height: 22px; padding: 0; position: absolute; z-index: 2; top: 10px; right: 10px; border: 1px solid #d2d5cf; border-radius: 50%; background: rgba(255,255,255,.76); color: #666a62; display: grid; place-items: center; font-size: 9px; font-weight: 850; transition: color .16s,border-color .16s,background .16s; }
+.reviewPackageInfoButton:hover,.reviewPackageInfoButton[aria-expanded="true"] { border-color: var(--ink); background: var(--ink); color: white; }
+.reviewInfoBackdrop { padding: 24px; position: fixed; z-index: 90; inset: 0; display: grid; place-items: center; background: rgba(24,25,21,.28); backdrop-filter: blur(14px); }
+.reviewInfoModal { width: min(430px,100%); padding: 28px; position: relative; overflow: hidden; border: 1px solid rgba(255,255,255,.88); border-radius: 26px; background: rgba(252,252,249,.97); box-shadow: 0 30px 90px rgba(18,19,15,.2),inset 0 1px 0 white; }
+.reviewInfoModal::before { content: ""; width: 190px; height: 190px; position: absolute; z-index: -1; top: -95px; left: -70px; border-radius: 50%; background: radial-gradient(circle,rgba(182,190,200,.28),transparent 70%); }
+.securityReviewInfoModal::before { background: radial-gradient(circle,rgba(234,194,75,.35),transparent 70%); }
+.reviewInfoClose { position: absolute; top: 18px; right: 18px; }
+.reviewInfoEyebrow { color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: .16em; text-transform: uppercase; }
+.reviewInfoHero { margin-top: 24px; padding-right: 42px; display: flex; align-items: center; gap: 16px; }
+.reviewInfoHero .reviewPackageLogo { width: 52px; height: 64px; }
+.reviewInfoHero .reviewPackageLogo svg { width: 44px; height: 58px; }
+.reviewInfoHero > div { display: grid; gap: 5px; }
+.reviewInfoHero h3 { margin: 0; font-size: 22px; font-weight: 840; letter-spacing: -.04em; }
+.reviewInfoHero p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.reviewInfoChecks { margin-top: 22px; border-block: 1px solid var(--line); }
+.reviewInfoChecks > div { min-height: 48px; display: grid; grid-template-columns: 24px minmax(0,1fr); align-items: center; gap: 10px; }
+.reviewInfoChecks > div + div { border-top: 1px solid var(--line); }
+.reviewInfoChecks span { width: 22px; height: 22px; border-radius: 50%; background: #edf1ec; color: var(--green); display: grid; place-items: center; font-size: 9px; font-weight: 850; }
+.securityReviewInfoModal .reviewInfoChecks span { background: #fbf1cf; color: #8a6008; }
+.reviewInfoChecks strong { font-size: 11px; font-weight: 720; }
+.reviewInfoFoot { margin: 18px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.reviewUpgradeFooter { margin: 12px 2px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.reviewUpgradeFooter p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.reviewUpgradeFooter p strong { color: var(--ink); }
+.manualReviewFooter { padding: 10px 12px; border: 1px solid #e2e3de; border-radius: 12px; background: #f7f7f4; }
+.reviewUpgradeFooter button { min-height: 34px; padding: 0 13px; font-size: 9px; }
+.activeReviewPlan { margin-top: 20px; padding: 16px 18px; border-radius: 18px; display: flex; align-items: center; gap: 12px; }
+.activeReviewPlan > div { display: grid; gap: 3px; }
+.activeReviewPlan > div strong { font-size: 12px; }
+.activeReviewPlan small { font-size: 8px; font-weight: 900; letter-spacing: .14em; }
+.activeReviewPlan button { margin-left: auto; }
+.securityActivePlan { border: 1px solid #e2d5b6; background: #fcf8ee; }
+.standardActivePlan { border: 1px solid #d9dce0; background: #f4f6f7; }
 
 /* Bounty wizard */
 .bountyWizard {
@@ -484,15 +543,21 @@ a { color: inherit; text-decoration: none; }
 .fieldHint { margin: 16px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .reviewPlanChoices { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
 .reviewPlanChoice { min-width: 0; min-height: 72px; padding: 13px; position: relative; border: 1px solid var(--line); border-radius: 15px; background: white; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: border-color .2s,box-shadow .2s,background .2s; }
+.reviewPlanChoice { isolation: isolate; }
+.reviewPlanChoice.plan-standard { border-color: #d9dce0; background: linear-gradient(145deg,#fff,#f3f5f6); }
+.reviewPlanChoice.plan-security { border-color: #e2d5b6; background: linear-gradient(145deg,#fffefb,#faf5e8); }
+.reviewPlanChoice.plan-standard.selected { border-color: #6f7780; box-shadow: 0 0 0 3px rgba(111,119,128,.12),0 12px 28px rgba(18,19,15,.08); }
+.reviewPlanChoice.plan-security.selected { border-color: #9c6c0a; box-shadow: 0 0 0 3px rgba(209,164,51,.15),0 12px 28px rgba(88,58,4,.1); }
 .reviewPlanChoice:hover { border-color: #b2b4ac; }
 .reviewPlanChoice.selected { border-color: var(--ink); background: #f8f8f5; box-shadow: 0 0 0 3px rgba(18,19,15,.05); }
 .reviewPlanChoice > input { width: 15px; height: 15px; margin: 0; flex: 0 0 auto; accent-color: var(--ink); }
 .reviewPlanChoice > span:nth-of-type(1) { min-width: 0; display: grid; gap: 4px; }
 .reviewPlanChoice strong { color: var(--ink); font-size: 12px; }
 .reviewPlanChoice small { color: var(--muted); font-size: 10px; white-space: nowrap; }
-.reviewHelp { width: 20px; height: 20px; margin-left: auto; position: relative; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 50%; display: grid; place-items: center; color: #70736a; font-size: 10px; font-weight: 800; cursor: help; }
+.reviewHelp { width: 20px; height: 20px; margin-left: auto; position: relative; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 50%; display: grid; place-items: center; color: #70736a; font-size: 10px; font-weight: 800; cursor: pointer; }
 .reviewHelp > span { width: 220px; padding: 10px 12px; position: absolute; z-index: 20; right: -8px; bottom: calc(100% + 10px); border-radius: 11px; background: #171817; color: white; box-shadow: 0 14px 34px rgba(18,19,15,.2); font-size: 10px; font-weight: 500; line-height: 1.5; pointer-events: none; opacity: 0; transform: translateY(4px); transition: opacity .16s,transform .16s; }
-.reviewHelp:hover > span,.reviewHelp:focus > span { opacity: 1; transform: translateY(0); }
+.reviewHelp.open { border-color: var(--ink); background: var(--ink); color: white; }
+.reviewHelp.open > span { opacity: 1; transform: translateY(0); }
 .reviewCard { border: 1px solid var(--line); border-radius: 20px; overflow: hidden; background: white; }
 .reviewMain { padding: 20px; }
 .reviewMain > span,.reviewGrid span { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
@@ -595,6 +660,10 @@ a { color: inherit; text-decoration: none; }
   .footer > a:last-child { font-size: 0; }
   .modalBackdrop { padding: 0; align-items: end; }
   .modal { width: 100%; max-height: 92vh; border-radius: 26px 26px 0 0; padding: 24px 18px calc(24px + env(safe-area-inset-bottom)); }
+  .reviewInfoBackdrop { padding: 16px; place-items: center; }
+  .reviewInfoModal { padding: 24px 20px; border-radius: 23px; }
+  .reviewInfoClose { top: 14px; right: 14px; }
+  .reviewInfoHero { margin-top: 20px; }
   .detailStats { grid-template-columns: 1fr; }
   .detailStats > div { display: flex; justify-content: space-between; }
   .submissionForm { grid-template-columns: 1fr; }
@@ -690,6 +759,11 @@ a { color: inherit; text-decoration: none; }
   .candidateCard { grid-template-columns: auto minmax(0,1fr); }
   .candidateCard > button,.candidateCard > .applicationState { grid-column: 2; }
   .applicationForm > div,.maintainerReview { align-items: stretch; flex-direction: column; }
+  .reviewUpgradeGrid { grid-template-columns: 1fr; }
+  .reviewUpgradeHeading { align-items: flex-start; flex-direction: column; }
+  .reviewUpgradeFooter { align-items: stretch; flex-direction: column; }
+  .activeReviewPlan { align-items: flex-start; flex-wrap: wrap; }
+  .activeReviewPlan button { width: 100%; margin-left: 0; }
   .maintainerReview > div:last-child { width: 100%; }
   .maintainerReview button { flex: 1; }
   .pathChooser { grid-template-columns: 1fr; }

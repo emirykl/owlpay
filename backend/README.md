@@ -13,7 +13,7 @@ The in-memory repository is retained for isolated local tests. Shared and produc
 ## Supabase setup
 
 1. Create a Supabase project.
-2. Run the files under `supabase/migrations` in numeric order in the SQL editor. Existing projects that already ran the earlier migrations must also run `0005_optional_manual_reviews.sql`.
+2. Run the files under `supabase/migrations` in numeric order in the SQL editor. Existing projects that already ran the earlier migrations must also run `0005_optional_manual_reviews.sql` and `0006_review_plan_upgrades.sql`.
 3. Enable GitHub under Authentication → Providers and copy the Supabase callback URL into the GitHub OAuth App.
 4. Set `PERSISTENCE_MODE=supabase`, `SUPABASE_URL` and the backend-only `SUPABASE_SECRET_KEY`.
 5. Generate a random `AGENT_API_KEY` with at least 24 characters.

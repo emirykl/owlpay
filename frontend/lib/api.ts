@@ -19,8 +19,10 @@ export interface Bounty {
   rewardAmount: string;
   reviewPlan: 'NONE' | 'STANDARD' | 'SECURITY';
   reviewPrice: string;
+  reviewPaidAmount: string;
   reviewPaymentStatus: 'NOT_REQUIRED' | 'REQUIRED' | 'PAID' | 'CONSUMED';
   reviewPaymentTxHash?: string;
+  reviewPaymentTxHashes: string[];
   reviewPaidAt?: string;
   reviewConsumedAt?: string;
   deadline: string;
@@ -99,6 +101,9 @@ export type CreateBountyPayload = Pick<Bounty,
 export interface ReviewPaymentRequirement {
   x402Version: 2;
   orderId: string;
+  targetPlan: 'STANDARD' | 'SECURITY';
+  currentPaidAmount: string;
+  paymentAmount: string;
   resource: { url: string; description: string; mimeType: string };
   accepts: Array<{
     scheme: 'exact';
@@ -187,16 +192,16 @@ export const owlpayApi = {
       method: 'POST',
       body: JSON.stringify({ pullRequestUrl, developerAddress, submissionTxHash })
     }),
-  requestReviewPayment: async (id: string) => {
+  requestReviewPayment: async (id: string, targetPlan?: 'STANDARD' | 'SECURITY') => {
     const response = await fetch(`${API_URL}/api/bounties/${id}/review-payment`, {
-      method: 'POST', headers: await authenticatedHeaders()
+      method: 'POST', headers: await authenticatedHeaders(), body: JSON.stringify({ targetPlan })
     });
     const body = await response.json().catch(() => ({ message: 'Payment requirement could not be loaded' })) as ReviewPaymentRequirement & { message?: string };
     if (response.status !== 402) throw new Error(body.message ?? `Request failed (${response.status})`);
     return body;
   },
-  confirmReviewPayment: (id: string, txHash: string) => api<Bounty>(`/api/bounties/${id}/review-payment/confirm`, {
-    method: 'POST', body: JSON.stringify({ txHash })
+  confirmReviewPayment: (id: string, txHash: string, targetPlan?: 'STANDARD' | 'SECURITY') => api<Bounty>(`/api/bounties/${id}/review-payment/confirm`, {
+    method: 'POST', body: JSON.stringify({ txHash, targetPlan })
   }),
   runReview: (id: string) => api<Bounty>(`/api/bounties/${id}/review/run`, { method: 'POST' }),
   approveBounty: (id: string) => api<Bounty>(`/api/bounties/${id}/approve`, { method: 'POST' }),

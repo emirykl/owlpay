@@ -131,7 +131,8 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
 
   app.post<{ Params: { id: string } }>('/api/bounties/:id/review-payment', async (request, reply) => {
     const actor = await auth.requireUser(request.headers.authorization);
-    const requirement = await service.getReviewPaymentRequirement(request.params.id, actor);
+    const body = request.body as { targetPlan?: 'STANDARD' | 'SECURITY' } | undefined;
+    const requirement = await service.getReviewPaymentRequirement(request.params.id, actor, body?.targetPlan);
     return reply
       .header('PAYMENT-REQUIRED', Buffer.from(JSON.stringify(requirement)).toString('base64'))
       .code(402)
@@ -140,8 +141,12 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
 
   app.post<{ Params: { id: string } }>('/api/bounties/:id/review-payment/confirm', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
-    const body = request.body as { txHash?: string };
-    return service.confirmReviewPayment(request.params.id, bytes32Schema.parse(body.txHash) as `0x${string}`, actor);
+    const body = request.body as { txHash?: string; targetPlan?: 'STANDARD' | 'SECURITY' };
+    const updated = await service.confirmReviewPayment(request.params.id, bytes32Schema.parse(body.txHash) as `0x${string}`, actor, body.targetPlan);
+    if (updated.status === 'SUBMITTED' && updated.reviewPaymentStatus === 'PAID') {
+      void service.runPaidReview(request.params.id).catch((error) => request.log.error(error, 'Automatic upgraded Owl Agent review failed'));
+    }
+    return updated;
   });
 
   app.post<{ Params: { id: string } }>('/api/bounties/:id/review/run', async (request) => {

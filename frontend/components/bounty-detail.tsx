@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { encodeFunctionData } from 'viem';
 import type { Bounty, BountyApplication } from '@/lib/api';
 import { owlpayApi } from '@/lib/api';
@@ -15,11 +16,13 @@ import { IdentityButton } from './identity-button';
 import { getBountyDeadlineState } from '@/lib/bounty-deadline';
 
 export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty; onClose: () => void }) {
+  const reduceMotion = useReducedMotion();
   const queryClient = useQueryClient();
   const { address, sendTransaction } = useWallet();
   const { configured, user, githubLogin, signIn } = useAuth();
   const [success, setSuccess] = useState<string | null>(null);
   const [applicationMessage, setApplicationMessage] = useState('');
+  const [reviewInfo, setReviewInfo] = useState<'STANDARD' | 'SECURITY' | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const detail = useQuery({ queryKey: ['bounty', initialBounty.id], queryFn: () => owlpayApi.getBounty(initialBounty.id), initialData: initialBounty });
   const identity = useQuery({ queryKey: ['identity'], queryFn: owlpayApi.me, enabled: configured && Boolean(user), retry: false });
@@ -38,11 +41,39 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const deadlineLabel = isClosed
     ? `Ended ${new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(bounty.deadline))}`
     : deadline.label;
+  const repository = getRepositoryIdentity(bounty.repositoryUrl);
+  const standardPrice = Number(network.data?.reviewPrices.standard ?? 1);
+  const securityPrice = Number(network.data?.reviewPrices.security ?? 2);
+  const paidReviewAmount = Number(bounty.reviewPaidAmount ?? (bounty.reviewPaymentStatus === 'PAID' ? bounty.reviewPrice : 0));
+  const securityActive = bounty.reviewPlan === 'SECURITY' && paidReviewAmount >= securityPrice && ['PAID', 'CONSUMED'].includes(bounty.reviewPaymentStatus);
+  const standardActive = !securityActive && bounty.reviewPlan === 'STANDARD' && paidReviewAmount >= standardPrice && ['PAID', 'CONSUMED'].includes(bounty.reviewPaymentStatus);
+  const canUpgradeReview = isOwner && bounty.reviewPaymentStatus !== 'CONSUMED' && !['PAID', 'REFUNDED', 'CANCELLED'].includes(bounty.status);
+  const standardPaymentRequirement = useQuery({
+    queryKey: ['review-payment-requirement', bounty.id, 'STANDARD', paidReviewAmount],
+    queryFn: () => owlpayApi.requestReviewPayment(bounty.id, 'STANDARD'),
+    enabled: canUpgradeReview && !standardActive,
+    retry: false,
+    staleTime: 30_000
+  });
+  const securityPaymentRequirement = useQuery({
+    queryKey: ['review-payment-requirement', bounty.id, 'SECURITY', paidReviewAmount],
+    queryFn: () => owlpayApi.requestReviewPayment(bounty.id, 'SECURITY'),
+    enabled: canUpgradeReview && !securityActive,
+    retry: false,
+    staleTime: 30_000
+  });
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!reviewInfo) return;
+    const closeOnEscape = (event: KeyboardEvent) => event.key === 'Escape' && setReviewInfo(null);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [reviewInfo]);
 
   const applyMutation = useMutation({
     mutationFn: () => {
@@ -106,11 +137,12 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
     }
   });
   const purchaseReviewMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (targetPlan: 'STANDARD' | 'SECURITY') => {
       if (!address || address.toLowerCase() !== bounty.ownerAddress.toLowerCase()) {
         throw new Error('Connect the wallet that created this bounty.');
       }
-      const requirement = await owlpayApi.requestReviewPayment(bounty.id);
+      const prefetchedRequirement = targetPlan === 'STANDARD' ? standardPaymentRequirement.data : securityPaymentRequirement.data;
+      const requirement = prefetchedRequirement ?? await owlpayApi.requestReviewPayment(bounty.id, targetPlan);
       const option = requirement.accepts[0];
       if (!option || option.network !== 'eip155:48816') throw new Error('No supported GOAT Testnet3 payment option was returned.');
       const txHash = await sendTransaction({
@@ -118,12 +150,15 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
         data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [option.payTo, BigInt(option.amount)] })
       });
       await goatPublicClient.waitForTransactionReceipt({ hash: txHash });
-      return owlpayApi.confirmReviewPayment(bounty.id, txHash);
+      return owlpayApi.confirmReviewPayment(bounty.id, txHash, targetPlan);
     },
     onSuccess: async (updated) => {
-      setSuccess('Owl Agent review package purchased. It will be consumed by this bounty submission only.');
+      setSuccess(`${updated.reviewPlan === 'SECURITY' ? 'Security' : 'Standard'} review is active.`);
       queryClient.setQueryData(['bounty', bounty.id], updated);
-      await queryClient.invalidateQueries({ queryKey: ['bounties'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['bounties'] }),
+        queryClient.invalidateQueries({ queryKey: ['review-payment-requirement', bounty.id] })
+      ]);
     }
   });
   const agentReviewMutation = useMutation({
@@ -152,7 +187,11 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
     <div className="modalBackdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="modal detailModal" role="dialog" aria-modal="true" aria-labelledby="bounty-title">
         <div className="modalHeader detailHeader">
-          <div><span className={`eyebrow ${isClosed ? 'closedText' : ''}`}>{isClosed ? 'CLOSED' : bounty.status.replaceAll('_', ' ')}</span><h2 id="bounty-title">{bounty.title}</h2><p>{bounty.description}</p></div>
+          <div>
+            <span className={`eyebrow ${isClosed ? 'closedText closedBadge' : ''}`}>{isClosed ? 'CLOSED' : bounty.status.replaceAll('_', ' ')}</span>
+            <div className="detailRepository"><span className="detailRepositoryAvatar" style={{ backgroundImage: `url(${repository.avatarUrl})` }} /><strong>{repository.fullName}</strong></div>
+            <h2 id="bounty-title">{bounty.title}</h2><p>{bounty.description}</p>
+          </div>
           <button className="iconButton" onClick={onClose} aria-label="Close">×</button>
         </div>
 
@@ -197,17 +236,42 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
           </div>
         )}
 
-        {isClosed && <div className="closedNotice"><strong>Applications closed</strong><span>The deadline has passed.</span></div>}
-
         {bounty.assignedDeveloperGithubLogin && <div className="assignedNotice"><span className="statusDot" /><p><strong>Assigned to @{bounty.assignedDeveloperGithubLogin}</strong><small>{isAssignedDeveloper ? `Estimated payout: ${estimatedPayout.toFixed(2)} otUSDC after the ${(platformFeeRate * 100).toFixed(0)}% OwlPay fee.` : 'Only the selected developer can submit work.'}</small></p></div>}
 
         {bounty.submission && <div className="submissionCard"><span>Submitted commit</span><strong>{bounty.submission.commitSha.slice(0, 10)}</strong><a href={bounty.submission.pullRequestUrl} target="_blank" rel="noreferrer">Open pull request <ArrowUpRight /></a></div>}
 
-        {isOwner && !isClosed && bounty.status !== 'DRAFT' && bounty.reviewPaymentStatus === 'REQUIRED' && (
-          <div className="maintainerReview"><div><strong>Complete review payment · {bounty.reviewPrice} otUSDC</strong><p>Finish the selected package now so the agent can start automatically when a PR arrives.</p></div><button className="primaryButton" onClick={() => purchaseReviewMutation.mutate()} disabled={purchaseReviewMutation.isPending}>{purchaseReviewMutation.isPending ? 'Confirming payment…' : `Pay for ${bounty.reviewPlan === 'SECURITY' ? 'security' : 'standard'} review`}</button></div>
+        {canUpgradeReview && !securityActive && (
+          <div className="reviewUpgradeSection">
+            <div className="reviewUpgradeHeading"><span>Owl Agent</span><strong>{standardActive ? 'Upgrade review' : 'Automated review'}</strong></div>
+            <div className="reviewUpgradeGrid">
+              <motion.article className={`reviewPackageCard standardPackageCard ${standardActive ? 'active' : ''}`} whileHover={reduceMotion || standardActive ? undefined : { y: -3 }} transition={{ type: 'spring', stiffness: 360, damping: 28 }}>
+                <button type="button" className="reviewPackageAction" onClick={() => purchaseReviewMutation.mutate('STANDARD')} disabled={purchaseReviewMutation.isPending || standardActive}>
+                  <span className="reviewPackageLogo"><ReviewOwlLogo tone="standard" /></span>
+                  <span className="reviewPackageCopy"><strong>Standard review</strong></span>
+                  <span className="reviewPackagePrice">{standardActive ? 'Active' : purchaseReviewMutation.isPending && purchaseReviewMutation.variables === 'STANDARD' ? 'Opening MetaMask…' : `${Math.max(0, standardPrice - paidReviewAmount)} otUSDC`}</span>
+                </button>
+                <button type="button" className="reviewPackageInfoButton" aria-label="Show Standard review details" aria-haspopup="dialog" aria-expanded={reviewInfo === 'STANDARD'} onClick={() => setReviewInfo('STANDARD')}>?</button>
+              </motion.article>
+              <motion.article className="reviewPackageCard securityPackageCard" whileHover={reduceMotion ? undefined : { y: -3 }} transition={{ type: 'spring', stiffness: 360, damping: 28 }}>
+                <button type="button" className="reviewPackageAction" onClick={() => purchaseReviewMutation.mutate('SECURITY')} disabled={purchaseReviewMutation.isPending}>
+                  <span className="reviewPackageLogo"><ReviewOwlLogo tone="security" /></span>
+                  <span className="reviewPackageCopy"><strong>Security review</strong></span>
+                  <span className="reviewPackagePrice">{purchaseReviewMutation.isPending && purchaseReviewMutation.variables === 'SECURITY' ? 'Opening MetaMask…' : `${Math.max(0, securityPrice - paidReviewAmount)} otUSDC${standardActive ? ' upgrade' : ''}`}</span>
+                </button>
+                <button type="button" className="reviewPackageInfoButton" aria-label="Show Security review details" aria-haspopup="dialog" aria-expanded={reviewInfo === 'SECURITY'} onClick={() => setReviewInfo('SECURITY')}>?</button>
+              </motion.article>
+            </div>
+            <div className={`reviewUpgradeFooter ${bounty.reviewPlan === 'NONE' && paidReviewAmount === 0 ? 'manualReviewFooter' : ''}`}>
+              <p>{bounty.reviewPlan === 'NONE' && paidReviewAmount === 0 ? <><strong>Manual review is active.</strong> Review the submitted PR yourself; approval releases escrow automatically.</> : 'One-time payment. The selected review starts when a pull request is submitted.'}</p>
+              {standardActive && bounty.status === 'SUBMITTED' && <button className="secondaryButton" onClick={() => agentReviewMutation.mutate()} disabled={agentReviewMutation.isPending}>{agentReviewMutation.isPending ? 'Analyzing…' : 'Run Standard review'}</button>}
+            </div>
+          </div>
         )}
-        {isOwner && bounty.reviewPaymentStatus === 'PAID' && (
-          <div className="maintainerReview"><div><strong>Review package ready</strong><p>{bounty.status === 'SUBMITTED' ? 'The pull request is ready for the Owl Agent evidence scan.' : 'The review starts automatically after the assigned developer submits a pull request.'}</p></div>{bounty.status === 'SUBMITTED' && <button className="primaryButton" onClick={() => agentReviewMutation.mutate()} disabled={agentReviewMutation.isPending}>{agentReviewMutation.isPending ? 'Analyzing GitHub evidence…' : 'Run Owl Agent'}</button>}</div>
+        {isOwner && securityActive && bounty.reviewPaymentStatus === 'PAID' && (
+          <div className="activeReviewPlan securityActivePlan"><span className="reviewPackageLogo"><ReviewOwlLogo tone="security" /></span><div><small>ACTIVE REVIEW</small><strong>Security review ready</strong></div>{bounty.status === 'SUBMITTED' && <button className="primaryButton" onClick={() => agentReviewMutation.mutate()} disabled={agentReviewMutation.isPending}>{agentReviewMutation.isPending ? 'Analyzing…' : 'Run Owl Agent'}</button>}</div>
+        )}
+        {isOwner && standardActive && !canUpgradeReview && bounty.reviewPaymentStatus === 'PAID' && (
+          <div className="activeReviewPlan standardActivePlan"><span className="reviewPackageLogo"><ReviewOwlLogo tone="standard" /></span><div><small>ACTIVE REVIEW</small><strong>Standard review ready</strong></div>{bounty.status === 'SUBMITTED' && <button className="primaryButton" onClick={() => agentReviewMutation.mutate()} disabled={agentReviewMutation.isPending}>{agentReviewMutation.isPending ? 'Analyzing…' : 'Run Owl Agent'}</button>}</div>
         )}
         {purchaseReviewMutation.error && <p className="formError" role="alert">{purchaseReviewMutation.error.message}</p>}
         {agentReviewMutation.error && <p className="formError" role="alert">{agentReviewMutation.error.message}</p>}
@@ -230,6 +294,54 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
 
         <div className="detailFooter"><a href={bounty.repositoryUrl} target="_blank" rel="noreferrer">GitHub repository <ArrowUpRight /></a>{bounty.fundingTxHash && <a href={`${goatTestnet.blockExplorers.default.url}/tx/${bounty.fundingTxHash}`} target="_blank" rel="noreferrer">Funding transaction <ArrowUpRight /></a>}{bounty.payoutTxHash && <a href={`${goatTestnet.blockExplorers.default.url}/tx/${bounty.payoutTxHash}`} target="_blank" rel="noreferrer">Payout transaction <ArrowUpRight /></a>}</div>
       </section>
+      <AnimatePresence>
+        {reviewInfo && <ReviewPackageInfoModal key={reviewInfo} plan={reviewInfo} onClose={() => setReviewInfo(null)} />}
+      </AnimatePresence>
     </div>
   );
+}
+
+function ReviewPackageInfoModal({ plan, onClose }: { plan: 'STANDARD' | 'SECURITY'; onClose: () => void }) {
+  const isSecurity = plan === 'SECURITY';
+  const checks = isSecurity
+    ? ['All Standard checks', 'Deep pull-request diff analysis', 'Security and secret risk signals']
+    : ['Acceptance criteria', 'Pull request and commit evidence', 'GitHub CI results'];
+  return (
+    <motion.div className="reviewInfoBackdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .18 }} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <motion.section className={`reviewInfoModal ${isSecurity ? 'securityReviewInfoModal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="review-info-title" initial={{ opacity: 0, y: 16, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: .98 }} transition={{ type: 'spring', stiffness: 380, damping: 31 }}>
+        <button type="button" className="iconButton reviewInfoClose" aria-label="Close review details" onClick={onClose}>×</button>
+        <span className="reviewInfoEyebrow">Owl Agent</span>
+        <div className="reviewInfoHero">
+          <span className="reviewPackageLogo"><ReviewOwlLogo tone={isSecurity ? 'security' : 'standard'} /></span>
+          <div><h3 id="review-info-title">{isSecurity ? 'Security review' : 'Standard review'}</h3><p>{isSecurity ? 'A deeper automated review for sensitive changes.' : 'A focused automated check for bounty delivery.'}</p></div>
+        </div>
+        <div className="reviewInfoChecks">{checks.map((check, index) => <div key={check}><span>{index + 1}</span><strong>{check}</strong></div>)}</div>
+        <p className="reviewInfoFoot">Runs automatically when the assigned developer submits a pull request.</p>
+      </motion.section>
+    </motion.div>
+  );
+}
+
+function ReviewOwlLogo({ tone }: { tone: 'standard' | 'security' }) {
+  const filterId = `review-owl-${tone}`;
+  const color = tone === 'security' ? [0.72, 0.46, 0.02] : [0.34, 0.38, 0.44];
+  return (
+    <svg viewBox="300 140 650 960" aria-hidden="true">
+      <defs>
+        <filter id={filterId} colorInterpolationFilters="sRGB">
+          <feColorMatrix type="matrix" values={`0 0 0 0 ${color[0]} 0 0 0 0 ${color[1]} 0 0 0 0 ${color[2]} -0.2126 -0.7152 -0.0722 0 1`} />
+        </filter>
+      </defs>
+      <image href="/owlpay-logo.png" width="1254" height="1254" filter={`url(#${filterId})`} />
+    </svg>
+  );
+}
+
+function getRepositoryIdentity(repositoryUrl: string) {
+  try {
+    const [owner = 'github', repository = 'repository'] = new URL(repositoryUrl).pathname.split('/').filter(Boolean);
+    return { fullName: `${owner}/${repository}`, avatarUrl: `https://github.com/${owner}.png?size=96` };
+  } catch {
+    return { fullName: 'GitHub repository', avatarUrl: 'https://github.com/github.png?size=96' };
+  }
 }

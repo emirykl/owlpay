@@ -60,7 +60,8 @@ describe('bounty application and assignment flow', () => {
     }, owner, 'github-token');
 
     expect(draft).toMatchObject({ reviewPlan: 'NONE', reviewPrice: '0', reviewPaymentStatus: 'NOT_REQUIRED' });
-    await expect(service.getReviewPaymentRequirement(draft.id, owner)).rejects.toMatchObject({ code: 'MANUAL_REVIEW_SELECTED' });
+    const optionalStandard = await service.getReviewPaymentRequirement(draft.id, owner, 'STANDARD');
+    expect(optionalStandard.accepts[0]?.amount).toBe('2000000');
     await service.markFunded(draft.id, '7', `0x${'1'.repeat(64)}`, owner.id);
     const application = await service.apply(draft.id, {
       message: 'I can complete this work and provide a focused pull request.',
@@ -75,6 +76,43 @@ describe('bounty application and assignment flow', () => {
     expect(submitted.bounty.status).toBe('SUBMITTED');
     expect(submitted.bounty.decision).toBeUndefined();
     expect(await service.approve(draft.id, owner)).toMatchObject({ status: 'PAID', payoutTxHash: `0x${'9'.repeat(64)}` });
+  });
+
+  it('upgrades a paid Standard review to Security by charging only the difference', async () => {
+    const verifiedAmounts: bigint[] = [];
+    const service = new BountyService(
+      new InMemoryBountyRepository(),
+      new InMemoryApplicationRepository(),
+      github,
+      new VerificationPolicy(),
+      settlement,
+      { async verify(input) { verifiedAmounts.push(input.amount); } },
+      {
+        paymentToken: '0x0000000000000000000000000000000000000010',
+        treasury: '0x0000000000000000000000000000000000000011',
+        standardPrice: '1',
+        securityPrice: '2'
+      }
+    );
+    const draft = await service.create({
+      title: 'Upgrade the automated review',
+      description: 'Verify that review plan upgrades charge only the difference.',
+      repositoryUrl: 'https://github.com/owlpay/demo',
+      ownerAddress: '0x0000000000000000000000000000000000000001',
+      rewardAmount: '20',
+      reviewPlan: 'NONE',
+      deadline: new Date(Date.now() + 86_400_000).toISOString(),
+      criteria: [{ id: 'upgrade', description: 'Review upgrade is recorded', mandatory: true, method: 'ci' }]
+    }, owner, 'github-token');
+
+    expect((await service.getReviewPaymentRequirement(draft.id, owner, 'STANDARD')).accepts[0]?.amount).toBe('1000000');
+    const silver = await service.confirmReviewPayment(draft.id, `0x${'6'.repeat(64)}`, owner, 'STANDARD');
+    expect(silver).toMatchObject({ reviewPlan: 'STANDARD', reviewPaidAmount: '1', reviewPaymentStatus: 'PAID' });
+    expect((await service.getReviewPaymentRequirement(draft.id, owner, 'SECURITY')).accepts[0]?.amount).toBe('1000000');
+    const gold = await service.confirmReviewPayment(draft.id, `0x${'7'.repeat(64)}`, owner, 'SECURITY');
+    expect(gold).toMatchObject({ reviewPlan: 'SECURITY', reviewPaidAmount: '2', reviewPaymentStatus: 'PAID' });
+    expect(gold.reviewPaymentTxHashes).toEqual([`0x${'6'.repeat(64)}`, `0x${'7'.repeat(64)}`]);
+    expect(verifiedAmounts).toEqual([1_000_000n, 1_000_000n]);
   });
 
   it('rejects applications after the bounty deadline', async () => {
