@@ -12,7 +12,7 @@ import { AuthButton } from './auth-button';
 import { IdentityButton } from './identity-button';
 import { useAuth } from './auth-provider';
 import { useWallet } from './wallet-provider';
-import { owlpayApi, type Bounty, type BountyStatus } from '@/lib/api';
+import { owlpayApi, type Bounty, type BountyApplication, type BountyStatus } from '@/lib/api';
 import { getBountyDeadlineState } from '@/lib/bounty-deadline';
 
 type WorkspaceView = 'explore' | 'owned' | 'applications';
@@ -141,12 +141,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
                 <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
               ) : (
                 <div className="myApplicationList">{myApplications.data?.items.map(({ application, bounty }) => (
-                  <button className="myApplicationCard" key={application.id} onClick={() => setSelectedBounty(bounty)}>
-                    <span className={`applicationState state-${application.status.toLowerCase()}`}>{application.status}</span>
-                    <div><strong>{bounty.title}</strong><span>{bounty.repositoryUrl.replace('https://github.com/', '')}</span><p>{application.message}</p></div>
-                    <div className="applicationReward"><strong>{bounty.rewardAmount} USDC</strong><span>{statusLabels[bounty.status]}</span></div>
-                    <ArrowUpRight />
-                  </button>
+                  <MyApplicationCard application={application} bounty={bounty} key={application.id} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} />
                 ))}</div>
               )}
             </section>
@@ -193,6 +188,28 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
       {creating && <CreateBounty onClose={() => setCreating(false)} />}
       {selectedBounty && <BountyDetail initialBounty={selectedBounty} onClose={() => setSelectedBounty(null)} />}
     </main>
+  );
+}
+
+function MyApplicationCard({ application, bounty, onOpen, reduceMotion }: { application: BountyApplication; bounty: Bounty; onOpen: () => void; reduceMotion: boolean | null }) {
+  const repository = repositoryMeta(bounty.repositoryUrl);
+
+  return (
+    <motion.button className="myApplicationCard" onClick={onOpen} whileHover={reduceMotion ? undefined : { y: -3 }} whileTap={{ scale: .995 }}>
+      <div className="myApplicationCardTop">
+        <div className="marketplaceRepo">
+          <span className="marketplaceAvatar" role="img" aria-label={`${repository.owner} GitHub avatar`} style={{ backgroundImage: `url(${repository.avatarUrl})` }}>{repository.owner.slice(0, 1).toUpperCase()}</span>
+          <strong>{repository.fullName}</strong>
+        </div>
+        <span className={`applicationState state-${application.status.toLowerCase()}`}>{application.status}</span>
+      </div>
+      <div className="myApplicationCardBody"><h2>{bounty.title}</h2><p>{application.message}</p></div>
+      <div className="myApplicationCardFooter">
+        <div><span>Reward</span><strong>{bounty.rewardAmount} USDC</strong></div>
+        <div><span>Bounty</span><strong>{statusLabels[bounty.status]}</strong></div>
+        <ArrowUpRight />
+      </div>
+    </motion.button>
   );
 }
 
