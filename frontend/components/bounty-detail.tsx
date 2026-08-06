@@ -14,6 +14,7 @@ import { useWallet } from './wallet-provider';
 import { WalletButton } from './wallet-button';
 import { IdentityButton } from './identity-button';
 import { getBountyDeadlineState } from '@/lib/bounty-deadline';
+import { getTransactionErrorMessage } from '@/lib/transaction-error';
 
 export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty; onClose: () => void }) {
   const reduceMotion = useReducedMotion();
@@ -162,6 +163,10 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
     submitMutation.mutate({ pullRequestUrl: String(data.get('pullRequestUrl')) });
   }
 
+  const assignErrorMessage = getTransactionErrorMessage(assignMutation.error, 'The assignment transaction could not be completed. Please try again.');
+  const purchaseReviewErrorMessage = getTransactionErrorMessage(purchaseReviewMutation.error, 'The review payment could not be completed. Please try again.');
+  const submitErrorMessage = getTransactionErrorMessage(submitMutation.error, 'The submission transaction could not be completed. Please try again.');
+
   return (
     <div className="modalBackdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="modal detailModal" role="dialog" aria-modal="true" aria-labelledby="bounty-title">
@@ -202,7 +207,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
                 {application.status === 'PENDING' ? <button className="secondaryButton" onClick={() => assignMutation.mutate(application)} disabled={assignMutation.isPending || bounty.status !== 'OPEN'}>{assignMutation.isPending ? 'Assigning…' : 'Assign bounty'}</button> : <span className={`applicationState state-${application.status.toLowerCase()}`}>{application.status}</span>}
               </article>)}</div>
             )}
-            {assignMutation.error && <p className="formError" role="alert">{assignMutation.error.message}</p>}
+            {assignErrorMessage && <p className="formError" role="alert">{assignErrorMessage}</p>}
           </div>
         )}
 
@@ -256,7 +261,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
         {isOwner && standardActive && !canUpgradeReview && bounty.reviewPaymentStatus === 'PAID' && (
           <div className="reviewUpgradeSection activeReviewSection"><div className="reviewUpgradeHeading"><h3>AI Review</h3></div><div className="activeReviewPlan standardActivePlan"><span className="reviewPackageLogo"><ReviewOwlLogo tone="standard" /></span><div><small>ACTIVE</small><strong>Standard review</strong></div>{bounty.status === 'SUBMITTED' && <button className="primaryButton" onClick={() => agentReviewMutation.mutate()} disabled={agentReviewMutation.isPending}>{agentReviewMutation.isPending ? 'Analyzing…' : 'Run review'}</button>}</div></div>
         )}
-        {purchaseReviewMutation.error && <p className="formError" role="alert">{purchaseReviewMutation.error.message}</p>}
+        {purchaseReviewErrorMessage && <p className="formError" role="alert">{purchaseReviewErrorMessage}</p>}
         {agentReviewMutation.error && <p className="formError" role="alert">{agentReviewMutation.error.message}</p>}
 
         {bounty.decision && <div className={`decisionCard decision-${bounty.decision.decision.toLowerCase()}`}><span>Owl Agent report · {Math.round(bounty.decision.confidence * 100)}%</span><h3>{bounty.decision.decision.replaceAll('_', ' ')}</h3><p>{bounty.decision.summary}</p>{bounty.decision.blockingIssues.map((issue) => <small key={issue}>{issue}</small>)}</div>}
@@ -265,7 +270,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
           <div className="detailSection submissionSection">
             <div className="detailSectionTitle"><h3>{bounty.status === 'REVISION_REQUIRED' ? 'Submit revision' : 'Submit your work'}</h3><span>Signed in as @{githubLogin}</span></div>
             <form className="submissionForm" onSubmit={submitWork}><input name="pullRequestUrl" type="url" required placeholder="https://github.com/org/repository/pull/42" aria-label="Pull request URL" /><button className="primaryButton" disabled={submitMutation.isPending}>{submitMutation.isPending ? 'Verifying & signing…' : 'Send for verification'}</button></form>
-            {submitMutation.error && <p className="formError" role="alert">{submitMutation.error.message}</p>}
+            {submitErrorMessage && <p className="formError" role="alert">{submitErrorMessage}</p>}
           </div>
         )}
 
@@ -296,13 +301,7 @@ function ReviewPackageInfoModal({ plan, onClose }: { plan: 'STANDARD' | 'SECURIT
         <span className="reviewInfoEyebrow">Owl AI Agent</span>
         <div className="reviewInfoHero">
           <span className="reviewPackageLogo"><ReviewOwlLogo tone={isSecurity ? 'security' : 'standard'} /></span>
-          <div className="reviewInfoHeroCopy">
-            <span className={`reviewAiBadge ${isSecurity ? 'security' : 'standard'}`}>AI-powered</span>
-            <h3 id="review-info-title">{isSecurity ? 'Security review' : 'Standard review'}</h3>
-            <p>{isSecurity
-              ? 'Performed automatically by OwlPay’s specialized security AI agent with deeper code and risk analysis.'
-              : 'Performed automatically by OwlPay’s dedicated AI agent using repository evidence and CI signals.'}</p>
-          </div>
+          <h3 id="review-info-title">{isSecurity ? 'Security review' : 'Standard review'}</h3>
         </div>
         <div className="reviewInfoChecks">{checks.map((check, index) => <div key={check}><span>{index + 1}</span><strong>{check}</strong></div>)}</div>
       </motion.section>
