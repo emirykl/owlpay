@@ -394,16 +394,20 @@ a { color: inherit; text-decoration: none; }
 .filterField input::placeholder { color: #60635c; opacity: 1; }
 .applicationWorkspace { min-height: 0; overflow: visible; display: grid; align-content: start; gap: 12px; }
 .applicationWorkspace .marketplaceEmpty,.applicationWorkspace > .marketplaceLoading { min-height: calc(100svh - 140px); }
-.myApplicationList { display: grid; gap: 10px; }
-.myApplicationCard { min-height: 108px; padding: 18px 20px; border: 1px solid rgba(255,255,255,.92); border-radius: 18px; background: rgba(255,255,252,.76); color: var(--ink); display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; align-items: center; gap: 16px; text-align: left; box-shadow: 0 10px 28px rgba(18,19,15,.03); }
-.myApplicationCard > div:nth-child(2) { display: grid; gap: 4px; }
-.myApplicationCard > div:nth-child(2) > strong { font-size: 13px; }
-.myApplicationCard > div:nth-child(2) > span { color: var(--muted); font-size: 9px; }
-.myApplicationCard p { overflow: hidden; margin: 5px 0 0; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.myApplicationCard > svg { width: 16px; }
-.applicationReward { display: grid; gap: 4px; text-align: right; }
-.applicationReward strong { font-size: 11px; }
-.applicationReward span { color: var(--muted); font-size: 9px; }
+.myApplicationList { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-content: start; gap: 12px; }
+.myApplicationCard { min-width: 0; min-height: 224px; padding: 22px; border: 1px solid rgba(255,255,255,.94); border-radius: 18px; background: rgba(255,255,252,.78); color: var(--ink); display: flex; flex-direction: column; text-align: left; box-shadow: 0 1px 2px rgba(18,19,15,.02),0 10px 28px rgba(18,19,15,.035); backdrop-filter: blur(20px); transition: background .2s,border-color .2s,box-shadow .2s; }
+.myApplicationCard:hover { background: rgba(255,255,255,.94); border-color: rgba(18,19,15,.09); box-shadow: 0 2px 3px rgba(18,19,15,.025),0 18px 42px rgba(18,19,15,.055); }
+.myApplicationCardTop { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.myApplicationCardTop .marketplaceRepo { min-width: 0; }
+.myApplicationCardTop .applicationState { flex: 0 0 auto; padding: 7px 10px; font-size: 10px; }
+.myApplicationCardBody { padding: 23px 0 18px; }
+.myApplicationCardBody h2 { margin: 0; font-size: 21px; line-height: 1.2; letter-spacing: -.035em; }
+.myApplicationCardBody p { margin: 10px 0 0; color: #60635c; font-size: 14px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.myApplicationCardFooter { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--line); display: flex; align-items: end; gap: 24px; }
+.myApplicationCardFooter > div { display: grid; gap: 5px; }
+.myApplicationCardFooter span { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.myApplicationCardFooter strong { font-size: 13px; }
+.myApplicationCardFooter > svg { width: 18px; margin-left: auto; align-self: center; }
 .applicationState { width: fit-content; padding: 6px 9px; border-radius: 999px; background: #ecece8; color: var(--muted); font-size: 8px; font-weight: 800; }
 .detailModal .applicationState { padding: 7px 10px; font-size: 11px; }
 .state-accepted { background: #e8f2eb; color: var(--green); }
@@ -771,9 +775,8 @@ a { color: inherit; text-decoration: none; }
   .marketplaceCard { min-height: 218px; }
   .marketplaceCardTop { align-items: flex-start; }
   .marketplaceCardPills { flex-direction: column; align-items: flex-end; }
-  .myApplicationCard { grid-template-columns: auto minmax(0,1fr) auto; }
-  .applicationReward { grid-column: 2; text-align: left; }
-  .myApplicationCard > svg { grid-column: 3; grid-row: 1 / 3; }
+  .myApplicationList { grid-template-columns: 1fr; }
+  .myApplicationCard { min-height: 218px; }
   .candidateCard { grid-template-columns: auto minmax(0,1fr); }
   .candidateCard > button,.candidateCard > .applicationState { grid-column: 2; }
   .applicationForm > div,.maintainerReview { align-items: stretch; flex-direction: column; }
