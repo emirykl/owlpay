@@ -13,6 +13,7 @@ import { IdentityButton } from './identity-button';
 import { useAuth } from './auth-provider';
 import { useWallet } from './wallet-provider';
 import { owlpayApi, type Bounty, type BountyStatus } from '@/lib/api';
+import { getBountyDeadlineState } from '@/lib/bounty-deadline';
 
 type WorkspaceView = 'explore' | 'owned' | 'applications';
 type ExploreStatus = 'ALL' | BountyStatus;
@@ -41,14 +42,6 @@ function repositoryMeta(repositoryUrl: string) {
   }
 }
 
-function remainingTime(deadline: string) {
-  const days = Math.ceil((new Date(deadline).getTime() - Date.now()) / 86_400_000);
-  if (days < 0) return 'Ended';
-  if (days === 0) return 'Ends today';
-  if (days === 1) return '1 day left';
-  return `${days} days left`;
-}
-
 export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'create' | 'explore'; initialView?: WorkspaceView }) {
   const reduceMotion = useReducedMotion();
   const { user, signIn } = useAuth();
@@ -61,6 +54,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
   const [exploreStatus, setExploreStatus] = useState<ExploreStatus>('ALL');
   const [exploreRepository, setExploreRepository] = useState('');
   const [exploreSort, setExploreSort] = useState<ExploreSort>('RECENT');
+  const [now, setNow] = useState(() => Date.now());
   const bounties = useQuery({ queryKey: ['bounties'], queryFn: owlpayApi.listBounties, retry: 1 });
   const myApplications = useQuery({ queryKey: ['my-applications', userId], queryFn: owlpayApi.listMyApplications, enabled: view === 'applications' && Boolean(userId), retry: false });
   const network = useQuery({ queryKey: ['network'], queryFn: owlpayApi.network, refetchInterval: 30_000, retry: 1 });
@@ -76,6 +70,11 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
   }, [initialIntent]);
 
   useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     const url = new URL(window.location.href);
     if (view === 'explore') url.searchParams.delete('view');
     else url.searchParams.set('view', view);
@@ -87,7 +86,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
       const query = exploreQuery.trim().toLowerCase();
       const repositoryQuery = exploreRepository.trim().toLowerCase();
       return publicItems
-        .filter((item) => exploreStatus === 'ALL' || item.status === exploreStatus)
+        .filter((item) => exploreStatus === 'ALL' || (item.status === exploreStatus && !(exploreStatus === 'OPEN' && getBountyDeadlineState(item.deadline, now).closed)))
         .filter((item) => !repositoryQuery || repositoryMeta(item.repositoryUrl).fullName.toLowerCase().includes(repositoryQuery))
         .filter((item) => !query || `${item.title} ${item.description} ${item.repositoryUrl}`.toLowerCase().includes(query))
         .sort((a, b) => {
@@ -101,7 +100,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
       || Boolean(address && item.ownerAddress.toLowerCase() === address.toLowerCase())
     ));
     return [];
-  }, [address, exploreQuery, exploreRepository, exploreSort, exploreStatus, items, publicItems, userId, view]);
+  }, [address, exploreQuery, exploreRepository, exploreSort, exploreStatus, items, now, publicItems, userId, view]);
 
   const title = viewTitles[view];
 
@@ -160,7 +159,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
                   ) : visibleItems.length === 0 ? (
                     <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
                   ) : (
-                    <div className="marketplaceGrid">{visibleItems.map((bounty) => <MarketplaceBountyCard bounty={bounty} key={bounty.id} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} />)}</div>
+                    <div className="marketplaceGrid">{visibleItems.map((bounty) => <MarketplaceBountyCard bounty={bounty} key={bounty.id} now={now} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} />)}</div>
                   )}
                 </div>
 
@@ -184,7 +183,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
               ) : visibleItems.length === 0 ? (
                 <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
               ) : (
-                <div className="marketplaceGrid">{visibleItems.map((bounty) => <MarketplaceBountyCard bounty={bounty} key={bounty.id} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} />)}</div>
+                <div className="marketplaceGrid">{visibleItems.map((bounty) => <MarketplaceBountyCard bounty={bounty} key={bounty.id} now={now} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} />)}</div>
               )}
             </section>
           )}
@@ -197,20 +196,22 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
   );
 }
 
-function MarketplaceBountyCard({ bounty, onOpen, reduceMotion }: { bounty: Bounty; onOpen: () => void; reduceMotion: boolean | null }) {
+function MarketplaceBountyCard({ bounty, now, onOpen, reduceMotion }: { bounty: Bounty; now: number; onOpen: () => void; reduceMotion: boolean | null }) {
   const repository = repositoryMeta(bounty.repositoryUrl);
   const applicants = bounty.applicantCount;
+  const deadline = getBountyDeadlineState(bounty.deadline, now);
+  const isClosed = bounty.status === 'OPEN' && deadline.closed;
 
   return (
     <motion.button className="marketplaceCard" onClick={onOpen} whileHover={reduceMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.995 }}>
       <div className="marketplaceCardTop">
         <div className="marketplaceRepo"><span className="marketplaceAvatar" role="img" aria-label={`${repository.owner} GitHub avatar`} style={{ backgroundImage: `url(${repository.avatarUrl})` }}>{repository.owner.slice(0, 1).toUpperCase()}</span><strong>{repository.fullName}</strong></div>
-        <div className="marketplaceCardPills"><span className={`statusBadge status-${bounty.status.toLowerCase()}`}>{statusLabels[bounty.status]}</span><span className="marketplaceReward">{bounty.rewardAmount} USDC</span></div>
+        <div className="marketplaceCardPills"><span className={`statusBadge status-${isClosed ? 'closed' : bounty.status.toLowerCase()}`}>{isClosed ? 'Closed' : statusLabels[bounty.status]}</span><span className="marketplaceReward">{bounty.rewardAmount} USDC</span></div>
       </div>
       <div className="marketplaceCardBody"><h2>{bounty.title}</h2><p>{bounty.description}</p></div>
       <div className="marketplaceCardFooter">
         <div><span className="metaIcon"><Users /></span><strong>{applicants}</strong><span>{applicants === 1 ? 'applicant' : 'applicants'}</span></div>
-        <div><span className="metaIcon"><Calendar /></span><strong>{remainingTime(bounty.deadline)}</strong></div>
+        <div><span className="metaIcon"><Calendar /></span><strong>{deadline.label}</strong></div>
       </div>
     </motion.button>
   );

@@ -7,10 +7,12 @@ beforeAll(async () => app.ready());
 afterAll(async () => app.close());
 
 describe('HTTP API', () => {
-  it('reports a healthy demo-safe service', async () => {
+  it('reports a healthy service in the configured write mode', async () => {
     const response = await app.inject({ method: 'GET', url: '/health' });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ status: 'ok', service: 'owlpay-api', mode: 'demo' });
+    const body = response.json();
+    expect(body).toMatchObject({ status: 'ok', service: 'owlpay-api' });
+    expect(['demo', 'testnet-write']).toContain(body.mode);
   });
 
   it('creates and lists a validated bounty draft', async () => {

@@ -33,6 +33,39 @@ const settlement: SettlementGateway = {
 };
 
 describe('bounty application and assignment flow', () => {
+  it('rejects applications after the bounty deadline', async () => {
+    const service = new BountyService(
+      new InMemoryBountyRepository(),
+      new InMemoryApplicationRepository(),
+      github,
+      new VerificationPolicy(),
+      settlement,
+      { async verify() {} },
+      {
+        paymentToken: '0x0000000000000000000000000000000000000010',
+        treasury: '0x0000000000000000000000000000000000000011',
+        standardPrice: '2',
+        securityPrice: '5'
+      }
+    );
+    const draft = await service.create({
+      title: 'Short deadline bounty',
+      description: 'This bounty is used to verify deadline enforcement.',
+      repositoryUrl: 'https://github.com/owlpay/demo',
+      ownerAddress: '0x0000000000000000000000000000000000000001',
+      rewardAmount: '20',
+      reviewPlan: 'STANDARD',
+      deadline: new Date(Date.now() - 1_000).toISOString(),
+      criteria: [{ id: 'deadline', description: 'Deadline enforcement works', mandatory: true, method: 'ci' }]
+    }, owner, 'github-token');
+    await service.markFunded(draft.id, '1', `0x${'1'.repeat(64)}`, owner.id);
+
+    await expect(service.apply(draft.id, {
+      message: 'I would like to complete this bounty before its deadline.',
+      developerAddress: '0x0000000000000000000000000000000000000002'
+    }, developers[0]!)).rejects.toMatchObject({ code: 'BOUNTY_EXPIRED' });
+  });
+
   it('accepts multiple applications, assigns one developer, verifies work, and releases payment after maintainer approval', async () => {
     const service = new BountyService(
       new InMemoryBountyRepository(),

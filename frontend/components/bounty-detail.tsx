@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { encodeFunctionData } from 'viem';
 import type { Bounty, BountyApplication } from '@/lib/api';
 import { owlpayApi } from '@/lib/api';
@@ -12,6 +12,7 @@ import { useAuth } from './auth-provider';
 import { useWallet } from './wallet-provider';
 import { WalletButton } from './wallet-button';
 import { IdentityButton } from './identity-button';
+import { getBountyDeadlineState } from '@/lib/bounty-deadline';
 
 export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty; onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -19,6 +20,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const { configured, user, githubLogin, signIn } = useAuth();
   const [success, setSuccess] = useState<string | null>(null);
   const [applicationMessage, setApplicationMessage] = useState('');
+  const [now, setNow] = useState(() => Date.now());
   const detail = useQuery({ queryKey: ['bounty', initialBounty.id], queryFn: () => owlpayApi.getBounty(initialBounty.id), initialData: initialBounty });
   const identity = useQuery({ queryKey: ['identity'], queryFn: owlpayApi.me, enabled: configured && Boolean(user), retry: false });
   const bounty = detail.data;
@@ -28,6 +30,13 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const applications = useQuery({ queryKey: ['bounty-applications', bounty.id], queryFn: () => owlpayApi.listBountyApplications(bounty.id), enabled: isOwner, retry: false });
   const myApplications = useQuery({ queryKey: ['my-applications', user?.id], queryFn: owlpayApi.listMyApplications, enabled: Boolean(user) && !isOwner, retry: false });
   const myApplication = myApplications.data?.items.find((item) => item.application.bountyId === bounty.id)?.application;
+  const deadline = getBountyDeadlineState(bounty.deadline, now);
+  const isClosed = bounty.status === 'OPEN' && deadline.closed;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const applyMutation = useMutation({
     mutationFn: () => {
@@ -135,14 +144,14 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
     <div className="modalBackdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="modal detailModal" role="dialog" aria-modal="true" aria-labelledby="bounty-title">
         <div className="modalHeader detailHeader">
-          <div><span className="eyebrow">{bounty.status.replaceAll('_', ' ')}</span><h2 id="bounty-title">{bounty.title}</h2><p>{bounty.description}</p></div>
+          <div><span className={`eyebrow ${isClosed ? 'closedText' : ''}`}>{isClosed ? 'CLOSED' : bounty.status.replaceAll('_', ' ')}</span><h2 id="bounty-title">{bounty.title}</h2><p>{bounty.description}</p></div>
           <button className="iconButton" onClick={onClose} aria-label="Close">×</button>
         </div>
 
         <div className="detailStats">
           <div><span>Reward</span><strong>{bounty.rewardAmount} USDC</strong></div>
           <div><span>Applications</span><strong>{bounty.applicantCount}</strong></div>
-          <div><span>Deadline</span><strong>{new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(bounty.deadline))}</strong></div>
+          <div><span>Deadline</span><strong>{deadline.label}</strong></div>
         </div>
 
         <div className="detailSection">
@@ -164,7 +173,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
           </div>
         )}
 
-        {bounty.status === 'OPEN' && !isOwner && (
+        {bounty.status === 'OPEN' && !isOwner && !isClosed && (
           <div className="detailSection applicationSection">
             <div className="detailSectionTitle"><h3>Apply for this bounty</h3><span>Send a short note to the maintainer</span></div>
             {configured && !user ? <button className="secondaryButton providerAction" onClick={signIn}><GitHubMark />Connect GitHub</button> : !address ? (
@@ -179,6 +188,8 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
             {applyMutation.error && <p className="formError" role="alert">{applyMutation.error.message}</p>}
           </div>
         )}
+
+        {isClosed && <div className="closedNotice"><strong>Applications closed</strong><p>This bounty reached its deadline and no longer accepts applications.</p></div>}
 
         {bounty.assignedDeveloperGithubLogin && <div className="assignedNotice"><span className="statusDot" /><p><strong>Assigned to @{bounty.assignedDeveloperGithubLogin}</strong><small>Only the selected developer can submit work.</small></p></div>}
 
