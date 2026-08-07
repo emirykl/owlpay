@@ -353,35 +353,38 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
                   {address && contractsReady && (
                     <section className={`balanceSummary ${balanceSummaryState}`} aria-labelledby="balance-summary-title">
                       <header className="balanceSummaryHeader">
-                        <div><span>Payment readiness</span><h4 id="balance-summary-title">Balances</h4></div>
+                        <div><span>Cost breakdown</span><h4 id="balance-summary-title">Total</h4></div>
                         <span className={`balanceSummaryStatus ${balanceSummaryState}`}>
-                          {visibleBalancesChecking ? 'Checking balances' : visibleBalancesCovered ? 'All balances covered' : 'Action needed'}
+                          {visibleBalancesChecking ? 'Checking balance' : visibleBalancesCovered ? 'Balance sufficient' : 'Insufficient balance'}
                         </span>
                       </header>
                       <div className="balanceSummaryRows">
                         <div className="balanceSummaryRow">
-                          <span className={`balanceCheckBadge ${tokenBalance.data === undefined ? 'checking' : rewardBalanceCovered ? 'covered' : 'insufficient'}`} role="img" aria-label={tokenBalance.data === undefined ? 'Escrow balance is being checked' : rewardBalanceCovered ? 'Escrow balance is covered' : 'Escrow balance is insufficient'}>
-                            {rewardBalanceCovered ? <Check /> : tokenBalance.data === undefined ? '…' : '!'}
-                          </span>
+                          <span className={`balanceCheckBadge covered`} role="img" aria-label="Escrow cost"><Check /></span>
                           <div className="balanceSummaryCopy">
-                            <span>Escrow balance</span>
-                            <strong>{tokenBalance.data === undefined ? 'Loading…' : `${formatUnits(tokenBalance.data, rewardTokenDecimals)} ${rewardTokenSymbol}`}</strong>
-                            <small><b>{formatUnits(rewardUnitsNeeded, rewardTokenDecimals)} {rewardTokenSymbol} required</b> for escrow{samePaymentToken && reviewPrice > 0 ? ' and AI review' : ''}.</small>
+                            <span>Escrow reward</span>
+                            <strong>{rewardAmount} {rewardTokenSymbol}</strong>
                           </div>
-                          {!hasEnoughRewardBalance && <div className="balanceRowActions"><small>Add GOAT Testnet3 USDC to the connected wallet.</small></div>}
                         </div>
-                        {showSeparateReviewBalance && (
+                        {reviewPlan !== 'NONE' && (
                           <div className="balanceSummaryRow">
-                            <span className={`balanceCheckBadge ${!reviewTokenAddress ? 'insufficient' : reviewTokenBalance.data === undefined ? 'checking' : reviewBalanceCovered ? 'covered' : 'insufficient'}`} role="img" aria-label={!reviewTokenAddress ? 'AI review balance is unavailable' : reviewTokenBalance.data === undefined ? 'AI review balance is being checked' : reviewBalanceCovered ? 'AI review balance is covered' : 'AI review balance is insufficient'}>
-                              {reviewBalanceCovered ? <Check /> : reviewTokenAddress && reviewTokenBalance.data === undefined ? '…' : '!'}
-                            </span>
+                            <span className={`balanceCheckBadge covered`} role="img" aria-label="Owl AI review cost"><Check /></span>
                             <div className="balanceSummaryCopy">
-                              <span>AI review balance</span>
-                              <strong>{!reviewTokenAddress ? 'Unavailable' : reviewTokenBalance.data === undefined ? 'Loading…' : `${formatUnits(reviewTokenBalance.data, reviewTokenDecimals)} ${reviewTokenSymbol}`}</strong>
-                              <small><b>{reviewPrice} {reviewTokenSymbol} required</b> for the Owl Agent review.</small>
+                              <span>Owl AI · {reviewPlan === 'SECURITY' ? 'Security' : 'Standard'}</span>
+                              <strong>{reviewPrice} {reviewTokenSymbol}</strong>
                             </div>
                           </div>
                         )}
+                        <div className="balanceSummaryRow balanceSummaryTotal">
+                          <span className={`balanceCheckBadge ${visibleBalancesChecking ? 'checking' : visibleBalancesCovered ? 'covered' : 'insufficient'}`} role="img" aria-label={visibleBalancesChecking ? 'Checking wallet balance' : visibleBalancesCovered ? 'Wallet balance is sufficient' : 'Wallet balance is insufficient'}>
+                            {visibleBalancesChecking ? '…' : visibleBalancesCovered ? <Check /> : '!'}
+                          </span>
+                          <div className="balanceSummaryCopy">
+                            <span>Total cost</span>
+                            <strong>{formatUnits(rewardUnits + reviewUnits, rewardTokenDecimals)} {rewardTokenSymbol}</strong>
+                            {!hasEnoughBalance && <small>Insufficient balance. Add GOAT Testnet3 USDC to your wallet.</small>}
+                          </div>
+                        </div>
                       </div>
                     </section>
                   )}
