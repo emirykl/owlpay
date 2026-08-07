@@ -76,7 +76,8 @@ export class SupabaseBountyRepository implements BountyRepository {
     // Keep deployments available while migration 0010 is being rolled out. Existing
     // funding transactions still resolve to their historical contract below.
     if (error.message.includes("'escrow_contract_address' column")) {
-      const { escrow_contract_address: _omitted, ...legacyRow } = row;
+      const legacyRow: Partial<BountyRow> = { ...row };
+      delete legacyRow.escrow_contract_address;
       const { error: legacyError } = await this.client.from('bounties').upsert(legacyRow, { onConflict: 'id' });
       if (!legacyError) return;
       throw new Error(`Supabase save failed: ${legacyError.message}`);

@@ -8,7 +8,15 @@ import { appealResolutionSchema, createApplicationSchema, createBountySchema, re
 import { getNetworkStatus } from '../infrastructure/goat-client.js';
 import { bountyForViewer } from '../application/bounty-visibility.js';
 
-export async function registerRoutes(app: FastifyInstance, service: BountyService, auth: AuthVerifier, walletIdentity: WalletIdentity) {
+type BackgroundTaskRunner = (task: Promise<unknown>) => void;
+
+export async function registerRoutes(
+  app: FastifyInstance,
+  service: BountyService,
+  auth: AuthVerifier,
+  walletIdentity: WalletIdentity,
+  runInBackground: BackgroundTaskRunner
+) {
   app.get('/health', async () => ({
     status: 'ok',
     service: 'owlpay-api',
@@ -38,6 +46,14 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     writesEnabled: env.ENABLE_TESTNET_WRITES,
     status: await getNetworkStatus()
   }));
+
+  app.get('/api/cron/resolve-due', async (request, reply) => {
+    if (!env.CRON_SECRET || request.headers.authorization !== `Bearer ${env.CRON_SECRET}`) {
+      return reply.code(401).send({ code: 'UNAUTHORIZED', message: 'Cron authorization is required' });
+    }
+    const items = await service.resolveDueBounties();
+    return { ok: true, processed: items.length, items };
+  });
 
   app.get('/api/me', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
@@ -151,7 +167,9 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     await walletIdentity.assertLinked(actor, input.developerAddress);
     const result = await service.submit(request.params.id, input, actor);
     if (result.bounty.reviewPaymentStatus === 'PAID') {
-      void service.runPaidReview(request.params.id).catch((error) => request.log.error(error, 'Automatic Owl Agent review failed'));
+      runInBackground(service.runPaidReview(request.params.id).catch((error) => {
+        request.log.error(error, 'Automatic Owl Agent review failed');
+      }));
     }
     return reply.code(201).send({ ...result, bounty: bountyForViewer(result.bounty, actor.id) });
   });
@@ -173,7 +191,9 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     if (!body.orderId || body.orderId.length > 200) return replyValidation(request, 'A valid GOAT Flow orderId is required');
     const updated = await service.confirmReviewPayment(request.params.id, body.orderId, bytes32Schema.parse(body.txHash) as `0x${string}`, actor);
     if (updated.status === 'SUBMITTED' && updated.reviewPaymentStatus === 'PAID') {
-      void service.runPaidReview(request.params.id).catch((error) => request.log.error(error, 'Automatic upgraded Owl Agent review failed'));
+      runInBackground(service.runPaidReview(request.params.id).catch((error) => {
+        request.log.error(error, 'Automatic upgraded Owl Agent review failed');
+      }));
     }
     return updated;
   });

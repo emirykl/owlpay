@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "fastify",
+  "crons": [
+    {
+      "path": "/api/cron/resolve-due",
+      "schedule": "0 3 * * *"
+    }
+  ]
+}
