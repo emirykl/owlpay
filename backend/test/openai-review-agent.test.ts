@@ -10,6 +10,12 @@ describe('OpenAIReviewAgent', () => {
       void request;
       return { output_parsed: {
         confidence: 0.95,
+        taskAssessment: {
+          status: 'FULLY_MET' as const,
+          score: 96,
+          evidence: ['file:src/app.ts'],
+          summary: 'The requested protected endpoint is present in the patch.'
+        },
         criterionResults: [
           { criterionId: 'implementation', status: 'PASSED' as const, evidence: ['file:src/app.ts'], summary: 'The endpoint is implemented.' },
           { criterionId: 'tests', status: 'FAILED' as const, evidence: ['file:src/app.ts'], summary: 'Model output must not override CI.' }
@@ -33,6 +39,7 @@ describe('OpenAIReviewAgent', () => {
     });
 
     expect(result).toMatchObject({ commitSha, confidence: 0.95 });
+    expect(result.taskAssessment).toMatchObject({ status: 'FULLY_MET', score: 96, evidence: ['file:src/app.ts'] });
     expect(result.criterionResults).toEqual([
       expect.objectContaining({ criterionId: 'implementation', status: 'PASSED', evidence: ['file:src/app.ts'] }),
       expect.objectContaining({ criterionId: 'tests', status: 'PASSED', evidence: ['check:unit-tests:success'] })
@@ -56,6 +63,12 @@ describe('OpenAIReviewAgent', () => {
           return {
             output_parsed: {
               confidence: 0.99,
+              taskAssessment: {
+                status: 'FULLY_MET' as const,
+                score: 99,
+                evidence: ['file:not-in-the-pull-request.ts'],
+                summary: 'Unsupported task assessment.'
+              },
               criterionResults: [{
                 criterionId: 'implementation',
                 status: 'PASSED' as const,
@@ -79,7 +92,57 @@ describe('OpenAIReviewAgent', () => {
     });
 
     expect(result.confidence).toBe(0.82);
+    expect(result.taskAssessment).toMatchObject({ status: 'UNKNOWN', score: 59, evidence: [] });
     expect(result.criterionResults[0]).toMatchObject({ status: 'UNKNOWN', evidence: [] });
+  });
+
+  it('scores the bounty request from the patch without penalizing missing CI', async () => {
+    const evidence = reviewEvidence();
+    evidence.files = [{
+      filename: 'README.md',
+      status: 'modified',
+      additions: 2,
+      deletions: 0,
+      changes: 2,
+      patch: '@@ -1,2 +1,4 @@\n # OwlPay\n+Hi world,\n+It\'s OwlPay time!'
+    }];
+    evidence.checks = [];
+
+    const agent = new OpenAIReviewAgent(
+      { apiKey: 'test-key', model: 'gpt-5-nano', maxDiffCharacters: 60_000 },
+      {
+        async parse() {
+          return {
+            output_parsed: {
+              confidence: 0.96,
+              taskAssessment: {
+                status: 'FULLY_MET' as const,
+                score: 94,
+                evidence: ['file:README.md'],
+                summary: 'Both requested lines are directly present in README.md.'
+              },
+              criterionResults: [],
+              findings: []
+            }
+          };
+        }
+      }
+    );
+
+    const result = await agent.review({
+      evidence,
+      criteria: [{ id: 'tests', description: 'Existing tests must pass', mandatory: true, method: 'ci' }],
+      plan: 'STANDARD',
+      context: {
+        bountyTitle: 'Add 2 lines into Readme',
+        bountyDescription: 'Add 2 lines into Readme "Hi world, It\'s OwlPay time!"',
+        safetyIdentifier: 'owner-1'
+      }
+    });
+
+    expect(result.taskAssessment).toMatchObject({ status: 'FULLY_MET', score: 94, evidence: ['file:README.md'] });
+    expect(result.criterionResults[0]).toMatchObject({ criterionId: 'tests', status: 'UNKNOWN' });
+    expect(result.confidence).toBe(0.82);
   });
 });
 

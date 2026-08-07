@@ -550,7 +550,9 @@ export class BountyService {
       return paid;
     }
 
-    const explicitFailure = decision.confidence < AUTO_PAYOUT_SCORE
+    const explicitFailure = decisionScore(decision) < AUTO_PAYOUT_SCORE * 100
+      || decision.taskAssessment?.status === 'NOT_MET'
+      || decision.taskAssessment?.status === 'PARTIALLY_MET'
       || decision.blockingIssues.length > 0
       || hasFailedMandatoryCriterion(bounty, decision);
     const unresolved: Bounty = explicitFailure
@@ -749,9 +751,14 @@ function uniqueValues(values: string[]) {
 }
 
 function qualifiesForAutomaticPayout(bounty: Bounty, decision: NonNullable<Bounty['decision']>) {
-  if (decision.confidence < AUTO_PAYOUT_SCORE || decision.blockingIssues.length > 0) return false;
+  if (decisionScore(decision) < AUTO_PAYOUT_SCORE * 100 || decision.confidence < AUTO_PAYOUT_SCORE || decision.blockingIssues.length > 0) return false;
+  if (decision.taskAssessment && !['FULLY_MET', 'MOSTLY_MET'].includes(decision.taskAssessment.status)) return false;
   const resultById = new Map(decision.criterionResults.map((result) => [result.criterionId, result]));
   return bounty.criteria.filter((criterion) => criterion.mandatory).every((criterion) => resultById.get(criterion.id)?.status === 'PASSED');
+}
+
+function decisionScore(decision: NonNullable<Bounty['decision']>) {
+  return decision.score ?? decision.taskAssessment?.score ?? Math.round(decision.confidence * 100);
 }
 
 function hasFailedMandatoryCriterion(bounty: Bounty, decision: NonNullable<Bounty['decision']>) {
