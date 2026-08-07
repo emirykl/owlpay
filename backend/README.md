@@ -13,7 +13,7 @@ The in-memory repository is retained for isolated local tests. Shared and produc
 ## Supabase setup
 
 1. Create a Supabase project.
-2. Run the files under `supabase/migrations` in numeric order in the SQL editor. Existing projects must apply every newer migration through `0009_bounty_resolution_windows.sql`.
+2. Run the files under `supabase/migrations` in numeric order in the SQL editor. Existing projects must apply every newer migration through `0010_escrow_contract_versioning.sql`.
 3. Enable GitHub under Authentication → Providers and copy the Supabase callback URL into the GitHub OAuth App.
 4. Set `PERSISTENCE_MODE=supabase`, `SUPABASE_URL` and the backend-only `SUPABASE_SECRET_KEY`.
 5. Generate a random `AGENT_API_KEY` with at least 24 characters.
@@ -60,12 +60,12 @@ npm run contract:test
 
 1. Create a dedicated MetaMask account on chain `48816` and obtain native test BTC gas from `https://bridge.testnet3.goat.network/faucet`.
 2. Copy `.env.example` to `.env`; set `DEPLOYER_PRIVATE_KEY`, `SETTLEMENT_AGENT_ADDRESS`, and `PLATFORM_TREASURY_ADDRESS` only in local/deployment secrets.
-3. Leave `PAYMENT_TOKEN_ADDRESS` empty to deploy `OwlPayTestUSDC` automatically. It has 6 decimals, a once-per-day public test faucet, and no real-world value. If a reviewed supported token is later selected, set its address instead.
+3. Set `PAYMENT_TOKEN_ADDRESS` to the verified GOAT Testnet3 USDC contract. Leaving it empty deploys the legacy faucet-only `OwlPayTestUSDC` and is intended only for isolated contract tests.
 4. Run `npm run contract:deploy:testnet` and save both output addresses. Lifecycle-contract changes require a fresh testnet deployment before enabling the resolution worker.
 5. Set `OWL_PAY_CONTRACT_ADDRESS`, `PAYMENT_TOKEN_ADDRESS`, and `PLATFORM_TREASURY_ADDRESS` in the backend. Set the two public contract addresses in the frontend.
 6. Run the contract tests, verify constructor values and roles on the explorer, then set `ENABLE_TESTNET_WRITES=true`.
 
-Official GOAT Testnet3 deployments currently include tUSDC at `0xFCA5846c86dC8Df1B1e21447649A08a18B667B92` and tUSDT at `0x030B2C744Fa080D97c0033214dEF6384f763aB21`, both with 18 decimals. OwlPay defaults to its own 6-decimal test token because the public project documentation does not provide an ordinary-user faucet for those owner-minted assets.
+The active OwlPay testnet deployment uses the same 6-decimal USDC configured by GOAT Flow at `0x29d1ee93e9ecf6e50f309f498e40a6b42d352fa1`. Verify the address, symbol, and decimals on-chain before changing environments.
 
 ## Review payment / x402 boundary
 
@@ -73,4 +73,4 @@ Official GOAT Testnet3 deployments currently include tUSDC at `0xFCA5846c86dC8Df
 
 The backend grants a review credit only after all three checks agree: GOAT Flow reports `PAYMENT_CONFIRMED` or `INVOICED`, the persisted facilitator proof matches the original order, and the GOAT Testnet3 receipt contains the exact payer/token/receiver/amount transfer. Order IDs and transaction hashes are replay-protected and persisted through migration `0007_goat_flow_review_orders.sql`.
 
-Merchant credentials (`GOAT_FLOW_API_KEY` and `GOAT_FLOW_API_SECRET`) stay in the backend environment. Set `GOAT_FLOW_TOKEN_SYMBOL`, `GOAT_FLOW_TOKEN_ADDRESS`, and `GOAT_FLOW_TOKEN_DECIMALS` to the token configured for the merchant. This review token is intentionally separate from `PAYMENT_TOKEN_ADDRESS`, which remains the bounty escrow token.
+Merchant credentials (`GOAT_FLOW_API_KEY` and `GOAT_FLOW_API_SECRET`) stay in the backend environment. Set `GOAT_FLOW_TOKEN_SYMBOL`, `GOAT_FLOW_TOKEN_ADDRESS`, and `GOAT_FLOW_TOKEN_DECIMALS` to the token configured for the merchant. On the current testnet deployment, the review and bounty escrow both use the same verified USDC contract.

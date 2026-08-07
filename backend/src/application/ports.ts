@@ -18,10 +18,10 @@ export interface ApplicationRepository {
 
 export interface SettlementGateway {
   readonly writesEnabled: boolean;
-  approveAndRelease(onchainId: string, verificationHash: `0x${string}`): Promise<`0x${string}` | null>;
-  requestRevision(onchainId: string, verificationHash: `0x${string}`): Promise<`0x${string}` | null>;
-  approveAfterTimeout(onchainId: string, verificationHash: `0x${string}`): Promise<`0x${string}` | null>;
-  refundAfterTimeout(onchainId: string, verificationHash: `0x${string}`): Promise<`0x${string}` | null>;
+  approveAndRelease(onchainId: string, verificationHash: `0x${string}`, escrowContractAddress?: string): Promise<`0x${string}` | null>;
+  requestRevision(onchainId: string, verificationHash: `0x${string}`, escrowContractAddress?: string): Promise<`0x${string}` | null>;
+  approveAfterTimeout(onchainId: string, verificationHash: `0x${string}`, escrowContractAddress?: string): Promise<`0x${string}` | null>;
+  refundAfterTimeout(onchainId: string, verificationHash: `0x${string}`, escrowContractAddress?: string): Promise<`0x${string}` | null>;
 }
 
 export interface PullRequestEvidence {

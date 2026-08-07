@@ -22,7 +22,8 @@ export class BountyService {
     private readonly settlement: SettlementGateway = noopSettlementGateway,
     private readonly reviewPaymentGateway: ReviewPaymentGateway = unavailableReviewPaymentGateway,
     private readonly reviewPayments: ReviewPaymentVerifier = unavailableReviewPaymentVerifier,
-    private readonly reviewConfig: ReviewConfig = defaultReviewConfig
+    private readonly reviewConfig: ReviewConfig = defaultReviewConfig,
+    private readonly settlementConfig: SettlementConfig = defaultSettlementConfig
   ) {}
 
   async list() {
@@ -72,6 +73,9 @@ export class BountyService {
       revisionExtensionUsed: false,
       timeoutResolution: 'NONE'
     };
+    if (this.settlementConfig.escrowContractAddress) {
+      bounty.escrowContractAddress = this.settlementConfig.escrowContractAddress.toLowerCase();
+    }
     await this.repository.save(bounty);
     return bounty;
   }
@@ -394,7 +398,8 @@ export class BountyService {
     if (!manualReviewReady && !agentReviewReady && !revisionFollowupReady) throw new DomainError('This bounty is not ready for maintainer approval', 409, 'NOT_READY_FOR_REVIEW');
     const payoutTxHash = await this.settlement.approveAndRelease(
       requireOnchainId(bounty, this.settlement.writesEnabled),
-      bounty.decision ? hashDecision(bounty.decision) : hashManualDecision(bounty, 'APPROVE')
+      bounty.decision ? hashDecision(bounty.decision) : hashManualDecision(bounty, 'APPROVE'),
+      bounty.escrowContractAddress
     );
     const updated: Bounty = payoutTxHash
       ? { ...bounty, status: 'PAID', payoutTxHash }
@@ -437,7 +442,8 @@ export class BountyService {
     };
     await this.settlement.requestRevision(
       requireOnchainId(bounty, this.settlement.writesEnabled),
-      hashRevisionRequest(bounty, revisionRequest)
+      hashRevisionRequest(bounty, revisionRequest),
+      bounty.escrowContractAddress
     );
     const updated: Bounty = {
       ...bounty,
@@ -490,7 +496,7 @@ export class BountyService {
     }
     if (bounty.timeoutResolution === 'AUTO_FAILED_PENDING' && bounty.appealDeadline && now > new Date(bounty.appealDeadline).getTime()) {
       const resolutionHash = hashTimeoutResolution(bounty, 'AUTO_REFUNDED');
-      const refundTxHash = await this.settlement.refundAfterTimeout(requireOnchainId(bounty, this.settlement.writesEnabled), resolutionHash);
+      const refundTxHash = await this.settlement.refundAfterTimeout(requireOnchainId(bounty, this.settlement.writesEnabled), resolutionHash, bounty.escrowContractAddress);
       const refunded: Bounty = {
         ...bounty,
         status: 'REFUNDED',
@@ -508,7 +514,7 @@ export class BountyService {
     const commitMatches = pullRequest.headSha === bounty.submission.commitSha;
     if (pullRequest.merged && commitMatches) {
       const verificationHash = hashTimeoutResolution(bounty, 'MERGED');
-      const payoutTxHash = await this.settlement.approveAfterTimeout(requireOnchainId(bounty, this.settlement.writesEnabled), verificationHash);
+      const payoutTxHash = await this.settlement.approveAfterTimeout(requireOnchainId(bounty, this.settlement.writesEnabled), verificationHash, bounty.escrowContractAddress);
       const paid: Bounty = {
         ...bounty,
         status: payoutTxHash ? 'PAID' : 'APPROVED',
@@ -537,7 +543,7 @@ export class BountyService {
 
     if (qualifiesForAutomaticPayout(bounty, decision) && commitMatches && pullRequest.state === 'open') {
       const verificationHash = hashTimeoutResolution({ ...bounty, decision }, 'AUTO_APPROVED');
-      const payoutTxHash = await this.settlement.approveAfterTimeout(requireOnchainId(bounty, this.settlement.writesEnabled), verificationHash);
+      const payoutTxHash = await this.settlement.approveAfterTimeout(requireOnchainId(bounty, this.settlement.writesEnabled), verificationHash, bounty.escrowContractAddress);
       const paid: Bounty = {
         ...bounty,
         decision,
@@ -728,6 +734,12 @@ export interface ReviewConfig {
 }
 
 const defaultReviewConfig: ReviewConfig = { paymentToken: '', tokenDecimals: 6, standardPrice: '1', securityPrice: '2' };
+
+export interface SettlementConfig {
+  escrowContractAddress: `0x${string}` | '';
+}
+
+const defaultSettlementConfig: SettlementConfig = { escrowContractAddress: '' };
 
 const unavailableReviewPaymentVerifier: ReviewPaymentVerifier = {
   async verify() { throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED'); }

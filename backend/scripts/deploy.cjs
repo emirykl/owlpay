@@ -7,6 +7,7 @@ async function main() {
   const [deployer] = await ethers.getSigners();
   const settlementAgent = readAddress('SETTLEMENT_AGENT_ADDRESS', deployer.address);
   const treasury = readAddress('PLATFORM_TREASURY_ADDRESS', deployer.address);
+  const platformFeeBps = readFeeBps();
   let paymentToken = process.env.PAYMENT_TOKEN_ADDRESS || '';
   let testTokenDeployed = false;
 
@@ -24,7 +25,7 @@ async function main() {
     settlementAgent,
     paymentToken,
     treasury,
-    300
+    platformFeeBps
   ]);
   await contract.waitForDeployment();
 
@@ -34,11 +35,19 @@ async function main() {
     deployer: deployer.address,
     settlementAgent,
     treasury,
-    platformFeeBps: 300,
+    platformFeeBps,
     paymentToken,
     testTokenDeployed,
     owlPayContract: await contract.getAddress()
   }, null, 2));
+}
+
+function readFeeBps() {
+  const value = Number(process.env.PLATFORM_FEE_BPS || 300);
+  if (!Number.isInteger(value) || value < 0 || value > 500) {
+    throw new Error('PLATFORM_FEE_BPS must be an integer between 0 and 500');
+  }
+  return value;
 }
 
 function readAddress(name, fallback) {

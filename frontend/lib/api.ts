@@ -51,6 +51,7 @@ export interface Bounty {
   createdAt: string;
   applicantCount: number;
   onchainId?: string;
+  escrowContractAddress?: string;
   fundingTxHash?: string;
   payoutTxHash?: string;
   refundTxHash?: string;
@@ -120,6 +121,7 @@ export interface NetworkInfo {
   writesEnabled: boolean;
   contractAddress: string | null;
   paymentTokenAddress: string | null;
+  paymentToken: { address: string | null; symbol: string; decimals: number };
   reviewPaymentToken: { address: string | null; symbol: string; decimals: number };
   platformFeeBps: number;
   reviewPrices: { standard: string; security: string };
