@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildApp } from '../src/app.js';
+import { buildApp } from '../src/create-app.js';
 
 const app = buildApp();
 
@@ -13,6 +13,12 @@ describe('HTTP API', () => {
     const body = response.json();
     expect(body).toMatchObject({ status: 'ok', service: 'owlpay-api' });
     expect(['demo', 'testnet-write']).toContain(body.mode);
+  });
+
+  it('rejects unauthenticated deadline resolution requests', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/cron/resolve-due' });
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ code: 'UNAUTHORIZED' });
   });
 
   it('creates and lists a validated bounty draft', async () => {

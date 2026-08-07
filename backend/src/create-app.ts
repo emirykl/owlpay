@@ -19,9 +19,10 @@ import { DemoAuthVerifier } from './application/auth.js';
 import { DemoWalletIdentity } from './infrastructure/demo-wallet-identity.js';
 import { SupabaseWalletIdentity } from './infrastructure/supabase-wallet-identity.js';
 import { registerRoutes } from './http/routes.js';
+import { runAfterResponse } from './infrastructure/background-task.js';
 
-export function buildApp() {
-  const app = Fastify({ logger: env.NODE_ENV !== 'test' });
+export function buildApp(createFastify: typeof Fastify = Fastify) {
+  const app = createFastify({ logger: env.NODE_ENV !== 'test' });
   const supabase = env.PERSISTENCE_MODE === 'supabase'
     ? createSupabaseAdminClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY)
     : null;
@@ -65,9 +66,12 @@ export function buildApp() {
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Agent-Key', 'X-GitHub-Token'],
     exposedHeaders: ['PAYMENT-REQUIRED']
   });
-  app.register(async (routesApp) => registerRoutes(routesApp, service, auth, walletIdentity));
+  app.register(async (routesApp) => registerRoutes(routesApp, service, auth, walletIdentity, runAfterResponse));
 
-  if (env.NODE_ENV !== 'test' && env.ENABLE_RESOLUTION_WORKER) {
+  // Vercel functions are short-lived and may scale to multiple instances. The
+  // protected cron route owns deadline resolution there; this interval remains
+  // available for local development and persistent Node.js hosts.
+  if (env.NODE_ENV !== 'test' && env.ENABLE_RESOLUTION_WORKER && process.env.VERCEL !== '1') {
     let resolutionRunning = false;
     const resolveDueBounties = async () => {
       if (resolutionRunning) return;
