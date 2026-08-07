@@ -73,8 +73,16 @@ export const criterionResultSchema = z.object({
   summary: z.string().max(1000)
 });
 
+export const taskAssessmentSchema = z.object({
+  status: z.enum(['FULLY_MET', 'MOSTLY_MET', 'PARTIALLY_MET', 'NOT_MET', 'UNKNOWN']),
+  score: z.number().int().min(0).max(100),
+  evidence: z.array(z.string()).max(10),
+  summary: z.string().max(1000)
+});
+
 export const verificationInputSchema = z.object({
   confidence: z.number().min(0).max(1),
+  taskAssessment: taskAssessmentSchema.optional(),
   criterionResults: z.array(criterionResultSchema),
   blockingIssues: z.array(z.string()).max(20).default([]),
   commitSha: z.string().regex(/^[a-fA-F0-9]{40}$/).optional()
@@ -137,6 +145,8 @@ export interface Submission {
 export interface AgentDecision {
   decision: 'APPROVE' | 'REVISION_REQUIRED' | 'HUMAN_REVIEW';
   confidence: number;
+  score?: number;
+  taskAssessment?: z.infer<typeof taskAssessmentSchema>;
   summary: string;
   blockingIssues: string[];
   criterionResults: z.infer<typeof criterionResultSchema>[];

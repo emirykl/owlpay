@@ -74,6 +74,13 @@ export interface Bounty {
   decision?: {
     decision: 'APPROVE' | 'REVISION_REQUIRED' | 'HUMAN_REVIEW';
     confidence: number;
+    score?: number;
+    taskAssessment?: {
+      status: 'FULLY_MET' | 'MOSTLY_MET' | 'PARTIALLY_MET' | 'NOT_MET' | 'UNKNOWN';
+      score: number;
+      evidence: string[];
+      summary: string;
+    };
     summary: string;
     blockingIssues: string[];
     criterionResults?: Array<{

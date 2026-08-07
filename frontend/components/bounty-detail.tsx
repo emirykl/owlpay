@@ -443,15 +443,15 @@ function RevisionRequestModal({ value, pending, error, onChange, onClose, onSubm
 type AgentDecision = NonNullable<Bounty['decision']>;
 
 function AgentReportCard({ decision, onOpen }: { decision: AgentDecision; onOpen: () => void }) {
-  const score = Math.round(decision.confidence * 100);
+  const score = agentTaskScore(decision);
   const tone = reportScoreTone(score);
   return (
     <article className={`agentReportCard reportTone-${tone}`}>
       <ReportGauge score={score} />
       <div className="agentReportSummary">
-        <span>Owl AI report</span>
+        <span>Owl AI task score</span>
         <h3>{formatDecision(decision.decision)}</h3>
-        <small>{reportScoreLabel(score)}</small>
+        <small>{reportScoreLabel(score, decision.taskAssessment?.status)}</small>
       </div>
       <button type="button" className="agentReportButton" onClick={onOpen}>View report <ArrowUpRight /></button>
     </article>
@@ -461,7 +461,7 @@ function AgentReportCard({ decision, onOpen }: { decision: AgentDecision; onOpen
 function ReportGauge({ score }: { score: number }) {
   const needleRotation = (Math.min(100, Math.max(0, score)) - 50) * 1.8;
   return (
-    <div className="reportGauge" role="img" aria-label={`Owl AI confidence score ${score} out of 100`}>
+    <div className="reportGauge" role="img" aria-label={`Owl AI task completion score ${score} out of 100`}>
       <svg viewBox="0 0 200 145" aria-hidden="true">
         <path className="reportGaugeTrack" d="M16 100 A84 84 0 0 1 184 100" pathLength="100" />
         <path className="reportGaugeSegment gaugeRed" d="M16 100 A84 84 0 0 1 50.63 32.04" />
@@ -479,7 +479,7 @@ function ReportGauge({ score }: { score: number }) {
 }
 
 function AgentReportModal({ bountyId, criteria, decision, submission, onClose }: { bountyId: string; criteria: Bounty['criteria']; decision: AgentDecision; submission?: Bounty['submission']; onClose: () => void }) {
-  const score = Math.round(decision.confidence * 100);
+  const score = agentTaskScore(decision);
   const resultById = new Map((decision.criterionResults ?? []).map((result) => [result.criterionId, result]));
   const results = [...resultById.values()];
   const passedCount = results.filter((result) => result.status === 'PASSED').length;
@@ -500,14 +500,24 @@ function AgentReportModal({ bountyId, criteria, decision, submission, onClose }:
         <header className="agentReportModalHeader"><span>Owl AI Agent</span><h2 id="agent-report-title">Review report</h2></header>
         <div className="agentReportOverview">
           <ReportGauge score={score} />
-          <div><span>Recommendation</span><strong>{formatDecision(decision.decision)}</strong><small>{reportScoreLabel(score)}</small></div>
+          <div><span>Task assessment</span><strong>{reportScoreLabel(score, decision.taskAssessment?.status)}</strong><small>Recommendation: {formatDecision(decision.decision)}</small></div>
         </div>
         <div className="agentReportStats">
+          <div><span>Evidence confidence</span><strong>{Math.round(decision.confidence * 100)}%</strong></div>
           <div><span>Criteria passed</span><strong>{passedCount}/{criteria.length}</strong></div>
-          <div><span>Evidence</span><strong>{evidenceCount}</strong></div>
           <div><span>Blocking issues</span><strong>{decision.blockingIssues.length}</strong></div>
           <div><span>{changedFiles === undefined ? 'Commit' : 'Changes reviewed'}</span><strong>{changedFiles === undefined ? reportEvidence.isLoading ? 'Loading…' : submission?.commitSha.slice(0, 8) ?? '—' : `${changedFiles} files · +${additions} −${deletions}`}</strong></div>
         </div>
+        {decision.taskAssessment && <section className="agentCriteriaReport" aria-labelledby="agent-task-title">
+          <div className="agentCriteriaHeader"><h3 id="agent-task-title">Bounty task</h3><span>{decision.taskAssessment.evidence.length || evidenceCount} evidence source(s)</span></div>
+          <div className="agentCriteriaList">
+            <article className={`agentCriterion task-${decision.taskAssessment.status.toLowerCase()}`}>
+              <span className="agentCriterionStatus">{decision.taskAssessment.status === 'FULLY_MET' || decision.taskAssessment.status === 'MOSTLY_MET' ? <Check /> : decision.taskAssessment.status === 'UNKNOWN' ? '?' : '!'}</span>
+              <div><strong>{reportScoreLabel(score, decision.taskAssessment.status)}</strong><p>{decision.taskAssessment.summary}</p></div>
+              <small>{score}/100</small>
+            </article>
+          </div>
+        </section>}
         <section className="agentCriteriaReport" aria-labelledby="agent-criteria-title">
           <div className="agentCriteriaHeader"><h3 id="agent-criteria-title">Criteria</h3><span>{criteria.length} checked</span></div>
           <div className="agentCriteriaList">
@@ -530,10 +540,16 @@ function reportScoreTone(score: number) {
   return 'red';
 }
 
-function reportScoreLabel(score: number) {
-  if (score >= 60) return 'High confidence';
-  if (score >= 30) return 'Moderate confidence';
-  return 'Low confidence';
+function reportScoreLabel(score: number, status?: NonNullable<AgentDecision['taskAssessment']>['status']) {
+  if (status === 'UNKNOWN') return 'Needs task evidence';
+  if (score >= 85) return 'Task fully met';
+  if (score >= 60) return 'Task mostly met';
+  if (score >= 30) return 'Task partially met';
+  return 'Task not met';
+}
+
+function agentTaskScore(decision: AgentDecision) {
+  return decision.score ?? decision.taskAssessment?.score ?? Math.round(decision.confidence * 100);
 }
 
 function formatDecision(decision: AgentDecision['decision']) {
