@@ -6,6 +6,7 @@ import { addressSchema, bytes32Schema } from '../domain/schemas.js';
 import { env } from '../config/env.js';
 import { appealResolutionSchema, createApplicationSchema, createBountySchema, requestRevisionSchema, submitWorkSchema, verificationInputSchema } from '../domain/schemas.js';
 import { getNetworkStatus } from '../infrastructure/goat-client.js';
+import { bountyForViewer } from '../application/bounty-visibility.js';
 
 export async function registerRoutes(app: FastifyInstance, service: BountyService, auth: AuthVerifier, walletIdentity: WalletIdentity) {
   app.get('/health', async () => ({
@@ -62,11 +63,16 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
   app.get('/api/bounties', async (request) => {
     const actor = await auth.optionalUser(request.headers.authorization);
     const items = await service.list();
-    return { items: items.filter((bounty) => bounty.status !== 'DRAFT' || bounty.ownerUserId === actor?.id) };
+    return {
+      items: items
+        .filter((bounty) => bounty.status !== 'DRAFT' || bounty.ownerUserId === actor?.id)
+        .map((bounty) => bountyForViewer(bounty, actor?.id))
+    };
   });
   app.get('/api/applications/me', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
-    return { items: await service.listMyApplications(actor) };
+    const items = await service.listMyApplications(actor);
+    return { items: items.map((item) => ({ ...item, bounty: bountyForViewer(item.bounty, actor.id) })) };
   });
   app.get<{ Params: { id: string } }>('/api/bounties/:id', async (request) => {
     const actor = await auth.optionalUser(request.headers.authorization);
@@ -76,7 +82,7 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
       error.statusCode = 404;
       throw error;
     }
-    return bounty;
+    return bountyForViewer(bounty, actor?.id);
   });
   app.get<{ Params: { id: string } }>('/api/bounties/:id/submission-report-evidence', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
@@ -142,7 +148,7 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     if (result.bounty.reviewPaymentStatus === 'PAID') {
       void service.runPaidReview(request.params.id).catch((error) => request.log.error(error, 'Automatic Owl Agent review failed'));
     }
-    return reply.code(201).send(result);
+    return reply.code(201).send({ ...result, bounty: bountyForViewer(result.bounty, actor.id) });
   });
 
   app.post<{ Params: { id: string } }>('/api/bounties/:id/review-payment', async (request, reply) => {
@@ -195,7 +201,7 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
   app.post<{ Params: { id: string } }>('/api/bounties/:id/resolution-appeal', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
     const input = appealResolutionSchema.parse(request.body);
-    return service.appealTimeoutResolution(request.params.id, actor, input.message);
+    return bountyForViewer(await service.appealTimeoutResolution(request.params.id, actor, input.message), actor.id);
   });
 }
 

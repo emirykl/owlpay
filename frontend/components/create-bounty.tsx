@@ -37,7 +37,8 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [deadline, setDeadline] = useState(defaultDeadline);
-  const [criterion, setCriterion] = useState('Existing tests must pass');
+  const [criterion, setCriterion] = useState('The pull request fulfills the requested bounty changes');
+  const [requireCi, setRequireCi] = useState(false);
   const [rewardAmount, setRewardAmount] = useState('20');
   const [reviewPlan, setReviewPlan] = useState<'NONE' | 'STANDARD' | 'SECURITY'>('STANDARD');
   const [deadlineBounds] = useState(() => ({
@@ -121,7 +122,10 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
         rewardAmount,
         reviewPlan,
         deadline: new Date(deadline).toISOString(),
-        criteria: [{ id: crypto.randomUUID(), description: criterion, mandatory: true, method: 'ci' as const }]
+        criteria: [
+          { id: crypto.randomUUID(), description: criterion, mandatory: true, method: 'github' as const },
+          ...(requireCi ? [{ id: crypto.randomUUID(), description: 'Configured GitHub checks must pass', mandatory: true, method: 'ci' as const }] : [])
+        ]
       };
       const draft = creationProgress.current.draft ?? await owlpayApi.createBounty(input);
       creationProgress.current.draft = draft;
@@ -297,6 +301,10 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
                   <div className="stepCopy"><h3>Reward & review</h3></div>
                   <div className="wizardFieldGrid">
                     <label className="wizardField full"><span>Mandatory acceptance criterion</span><input value={criterion} onChange={(event) => setCriterion(event.target.value)} required minLength={3} autoFocus /></label>
+                    <label className={`ciRequirementToggle full ${requireCi ? 'enabled' : ''}`}>
+                      <input type="checkbox" checked={requireCi} onChange={(event) => setRequireCi(event.target.checked)} />
+                      <span><strong>Require GitHub CI checks</strong><small>Enable only when this repository has GitHub Actions or another configured check suite that must pass.</small></span>
+                    </label>
                     <label className="wizardField full"><span>Reward · otUSDC</span><input value={rewardAmount} onChange={(event) => setRewardAmount(event.target.value)} inputMode="decimal" pattern="\d+(\.\d{1,6})?" required /></label>
                     <div className="wizardField full">
                       <span>Review method</span>
@@ -311,7 +319,7 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
                         />
                         <ReviewPlanChoice
                           checked={reviewPlan === 'STANDARD'}
-                          description="Checks the required criterion, pull-request evidence, and GitHub CI results. Paid once while funding the bounty."
+                          description="Checks the bounty requirements and pull-request evidence, plus CI only when you require it. Paid once while funding the bounty."
                           label="Standard"
                           price={`${network.data?.reviewPrices.standard ?? '1'} ${reviewTokenSymbol}`}
                           value="STANDARD"
@@ -341,6 +349,7 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
                     </div>
                     <div className="reviewGrid"><div><span>Escrow reward</span><strong>{rewardAmount} otUSDC</strong></div><div><span>Review method</span><strong>{reviewPlan === 'NONE' ? 'Manual · Free' : `${reviewPlan === 'SECURITY' ? 'Security' : 'Standard'} · ${reviewPrice.toFixed(2)} ${reviewTokenSymbol} paid now`}</strong></div><div><span>Deadline</span><strong>{new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(deadline))}</strong></div></div>
                     <div className="reviewCriterion"><span><Check /></span><p><strong>Mandatory evidence</strong><small>{criterion}</small></p></div>
+                    {requireCi && <div className="reviewCriterion ciReviewCriterion"><span><Check /></span><p><strong>CI required</strong><small>Configured GitHub checks must pass.</small></p></div>}
                   </div>
                   {!address && <div className="connectionGate walletGate providerGate"><span className="connectionProviderIcon metamaskConnectionIcon"><MetaMaskMark /></span><div><strong>Connect MetaMask to fund</strong><p>Your connected address becomes the bounty owner on GOAT Testnet3.</p></div><WalletButton /></div>}
                   {address && authConfigured && !identityLinked && <div className="connectionGate walletGate providerGate"><span className="connectionProviderIcon linkConnectionIcon"><LinkMark /></span><div><strong>Link GitHub and wallet</strong><p>Sign one verification message so OwlPay can bind this bounty to your identity.</p></div><IdentityButton /></div>}

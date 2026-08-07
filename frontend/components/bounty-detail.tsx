@@ -17,6 +17,17 @@ import { getBountyDeadlineState } from '@/lib/bounty-deadline';
 import { getTransactionErrorMessage } from '@/lib/transaction-error';
 
 const LIVE_SYNC_INTERVAL = 4_000;
+const CONFETTI_COLORS = ['#2f9e67', '#f4c928', '#ef5a4f', '#f19a26', '#4f7bd9'];
+const CONFETTI_PIECES = Array.from({ length: 30 }, (_, index) => ({
+  id: index,
+  color: CONFETTI_COLORS[index % CONFETTI_COLORS.length],
+  x: ((index * 83) % 980) - 490,
+  lift: 100 + ((index * 37) % 190),
+  fall: 360 + ((index * 61) % 330),
+  rotation: 420 + ((index * 97) % 620),
+  delay: (index % 8) * 0.035,
+  duration: 1.8 + ((index * 19) % 70) / 100
+}));
 
 export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty; onClose: () => void }) {
   const reduceMotion = useReducedMotion();
@@ -304,6 +315,10 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
           </div>
         )}
 
+        {isAssignedDeveloper && bounty.status === 'PAID' && (
+          <ContributorPayoutCelebration bountyId={bounty.id} payoutTxHash={bounty.payoutTxHash} amount={estimatedPayout.toFixed(2)} />
+        )}
+
         {bounty.submission && <div className="submissionCard"><span>Submitted commit</span><strong>{bounty.submission.commitSha.slice(0, 10)}</strong><a href={bounty.submission.pullRequestUrl} target="_blank" rel="noreferrer">Open pull request <ArrowUpRight /></a></div>}
 
         {bounty.timeoutResolution !== 'NONE' && (
@@ -343,7 +358,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
         {purchaseReviewErrorMessage && <p className="formError" role="alert">{purchaseReviewErrorMessage}</p>}
         {agentReviewMutation.error && <p className="formError" role="alert">{agentReviewMutation.error.message}</p>}
 
-        {bounty.decision && <AgentReportCard decision={bounty.decision} onOpen={() => setReportOpen(true)} />}
+        {isOwner && bounty.decision && <AgentReportCard decision={bounty.decision} onOpen={() => setReportOpen(true)} />}
 
         {bounty.status === 'REVISION_REQUIRED' && latestRevisionRequest && (isAssignedDeveloper || isOwner) && (
           <article className="revisionFeedbackCard">
@@ -378,10 +393,55 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
       </section>
       <AnimatePresence>
         {reviewInfo && <ReviewPackageInfoModal key={reviewInfo} plan={reviewInfo} onClose={() => setReviewInfo(null)} />}
-        {reportOpen && bounty.decision && <AgentReportModal key="agent-report" bountyId={bounty.id} criteria={bounty.criteria} decision={bounty.decision} submission={bounty.submission} onClose={() => setReportOpen(false)} />}
+        {isOwner && reportOpen && bounty.decision && <AgentReportModal key="agent-report" bountyId={bounty.id} criteria={bounty.criteria} decision={bounty.decision} submission={bounty.submission} onClose={() => setReportOpen(false)} />}
         {revisionComposerOpen && <RevisionRequestModal key="revision-request" value={revisionMessage} pending={reviewMutation.isPending} error={reviewMutation.error?.message} onChange={setRevisionMessage} onClose={() => setRevisionComposerOpen(false)} onSubmit={() => reviewMutation.mutate({ type: 'revision', message: revisionMessage.trim() })} />}
       </AnimatePresence>
     </div>
+  );
+}
+
+function ContributorPayoutCelebration({ bountyId, payoutTxHash, amount }: { bountyId: string; payoutTxHash?: string; amount: string }) {
+  const reduceMotion = useReducedMotion();
+  const [burst, setBurst] = useState(false);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    const celebrationKey = `owlpay-payout-celebrated:${bountyId}:${payoutTxHash ?? 'paid'}`;
+    if (window.sessionStorage.getItem(celebrationKey)) return;
+    window.sessionStorage.setItem(celebrationKey, 'true');
+    const startTimer = window.setTimeout(() => setBurst(true), 0);
+    const stopTimer = window.setTimeout(() => setBurst(false), 3_000);
+    return () => {
+      window.clearTimeout(startTimer);
+      window.clearTimeout(stopTimer);
+    };
+  }, [bountyId, payoutTxHash, reduceMotion]);
+
+  return (
+    <>
+      {burst && <div className="payoutConfetti" aria-hidden="true">
+        {CONFETTI_PIECES.map((piece) => (
+          <motion.i
+            key={piece.id}
+            style={{ backgroundColor: piece.color }}
+            initial={{ x: 0, y: 0, rotate: 0, scale: 0, opacity: 0 }}
+            animate={{
+              x: [0, piece.x * .45, piece.x],
+              y: [0, -piece.lift, piece.fall],
+              rotate: [0, piece.rotation * .35, piece.rotation],
+              scale: [0, 1, 1, .7],
+              opacity: [0, 1, 1, 0]
+            }}
+            transition={{ duration: piece.duration, delay: piece.delay, ease: [0.2, 0.7, 0.2, 1], times: [0, .22, .78, 1] }}
+          />
+        ))}
+      </div>}
+      <motion.article className="contributorWinCard" role="status" initial={reduceMotion ? false : { opacity: 0, y: 10, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', stiffness: 330, damping: 28 }}>
+        <span className="contributorWinIcon"><Check /></span>
+        <div><small>Bounty successfully completed</small><h3>You earned {amount} otUSDC</h3><p>The maintainer approved your work and the escrow payment was released to your payout wallet.</p></div>
+        {payoutTxHash && <a href={`${goatTestnet.blockExplorers.default.url}/tx/${payoutTxHash}`} target="_blank" rel="noreferrer">View payout <ArrowUpRight /></a>}
+      </motion.article>
+    </>
   );
 }
 
@@ -562,7 +622,7 @@ function ReviewPackageInfoModal({ plan, onClose }: { plan: 'STANDARD' | 'SECURIT
   const isSecurity = plan === 'SECURITY';
   const checks = isSecurity
     ? ['All Standard checks', 'Deep pull-request diff analysis', 'Security and secret risk signals']
-    : ['Acceptance criteria', 'Pull request and commit evidence', 'GitHub CI results'];
+    : ['Acceptance criteria', 'Pull request and commit evidence', 'Optional GitHub CI checks'];
   return (
     <motion.div className="reviewInfoBackdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .18 }} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <motion.section className={`reviewInfoModal ${isSecurity ? 'securityReviewInfoModal' : ''}`} role="dialog" aria-modal="true" aria-labelledby="review-info-title" initial={{ opacity: 0, y: 16, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: .98 }} transition={{ type: 'spring', stiffness: 380, damping: 31 }}>

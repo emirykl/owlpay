@@ -96,7 +96,7 @@ describe('OpenAIReviewAgent', () => {
     expect(result.criterionResults[0]).toMatchObject({ status: 'UNKNOWN', evidence: [] });
   });
 
-  it('scores the bounty request from the patch without penalizing missing CI', async () => {
+  it('keeps the task score independent when required CI evidence is missing', async () => {
     const evidence = reviewEvidence();
     evidence.files = [{
       filename: 'README.md',
@@ -143,6 +143,48 @@ describe('OpenAIReviewAgent', () => {
     expect(result.taskAssessment).toMatchObject({ status: 'FULLY_MET', score: 94, evidence: ['file:README.md'] });
     expect(result.criterionResults[0]).toMatchObject({ criterionId: 'tests', status: 'UNKNOWN' });
     expect(result.confidence).toBe(0.82);
+  });
+
+  it('does not penalize confidence when the bounty does not require CI', async () => {
+    const evidence = reviewEvidence();
+    evidence.checks = [];
+
+    const agent = new OpenAIReviewAgent(
+      { apiKey: 'test-key', model: 'gpt-5-nano', maxDiffCharacters: 60_000 },
+      {
+        async parse() {
+          return {
+            output_parsed: {
+              confidence: 0.96,
+              taskAssessment: {
+                status: 'FULLY_MET' as const,
+                score: 94,
+                evidence: ['file:src/app.ts'],
+                summary: 'The requested change is directly present in the patch.'
+              },
+              criterionResults: [{
+                criterionId: 'implementation',
+                status: 'PASSED' as const,
+                evidence: ['file:src/app.ts'],
+                summary: 'The requested implementation is present.'
+              }],
+              findings: []
+            }
+          };
+        }
+      }
+    );
+
+    const result = await agent.review({
+      evidence,
+      criteria: [{ id: 'implementation', description: 'The pull request fulfills the requested bounty changes', mandatory: true, method: 'github' }],
+      plan: 'STANDARD',
+      context: { bountyTitle: 'Implement endpoint', bountyDescription: 'Add an endpoint.', safetyIdentifier: 'owner-1' }
+    });
+
+    expect(result.confidence).toBe(0.96);
+    expect(result.taskAssessment?.score).toBe(94);
+    expect(result.criterionResults[0]?.status).toBe('PASSED');
   });
 });
 
