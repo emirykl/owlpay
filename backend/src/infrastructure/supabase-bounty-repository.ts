@@ -40,6 +40,7 @@ interface BountyRow {
   criteria: Criterion[];
   status: BountyStatus;
   onchain_id: string | null;
+  escrow_contract_address: string | null;
   funding_tx_hash: string | null;
   payout_tx_hash: string | null;
   refund_tx_hash: string | null;
@@ -69,8 +70,18 @@ export class SupabaseBountyRepository implements BountyRepository {
   }
 
   async save(bounty: Bounty): Promise<void> {
-    const { error } = await this.client.from('bounties').upsert(toRow(bounty), { onConflict: 'id' });
-    if (error) throw new Error(`Supabase save failed: ${error.message}`);
+    const row = toRow(bounty);
+    const { error } = await this.client.from('bounties').upsert(row, { onConflict: 'id' });
+    if (!error) return;
+    // Keep deployments available while migration 0010 is being rolled out. Existing
+    // funding transactions still resolve to their historical contract below.
+    if (error.message.includes("'escrow_contract_address' column")) {
+      const { escrow_contract_address: _omitted, ...legacyRow } = row;
+      const { error: legacyError } = await this.client.from('bounties').upsert(legacyRow, { onConflict: 'id' });
+      if (!legacyError) return;
+      throw new Error(`Supabase save failed: ${legacyError.message}`);
+    }
+    throw new Error(`Supabase save failed: ${error.message}`);
   }
 }
 
@@ -101,6 +112,8 @@ function fromRow(row: BountyRow): Bounty {
   };
   if (row.owner_user_id) bounty.ownerUserId = row.owner_user_id;
   if (row.onchain_id) bounty.onchainId = row.onchain_id;
+  const escrowContractAddress = row.escrow_contract_address ?? legacyEscrowContract(row.funding_tx_hash);
+  if (escrowContractAddress) bounty.escrowContractAddress = escrowContractAddress;
   if (row.funding_tx_hash) bounty.fundingTxHash = row.funding_tx_hash;
   if (row.payout_tx_hash) bounty.payoutTxHash = row.payout_tx_hash;
   if (row.refund_tx_hash) bounty.refundTxHash = row.refund_tx_hash;
@@ -126,6 +139,17 @@ function fromRow(row: BountyRow): Bounty {
   if (row.appeal_deadline) bounty.appealDeadline = new Date(row.appeal_deadline).toISOString();
   if (row.appeal_message) bounty.appealMessage = row.appeal_message;
   return bounty;
+}
+
+const LEGACY_ESCROW_BY_FUNDING_TX = new Map([
+  ['0x474d4b554f3bed32159d078d2ba3f0a49811348acd5d4118332476cc992b2561', '0x9682ba996dd174ad87573a9cc0fb6bf228f72f24'],
+  ['0xee91a885df7ff23525d7d540f29cb3b4249a9094df4c57c2c3bb3c0ba37c1d37', '0x9682ba996dd174ad87573a9cc0fb6bf228f72f24'],
+  ['0xd4d00f0d630b20f5ac44fc50601f0f714a2fec276e7e46ec4d75f5195614cf19', '0x9682ba996dd174ad87573a9cc0fb6bf228f72f24'],
+  ['0xf806d6483d34fce8cf63ab81d4760d2cdd7676c14b30ede37d5c12d36b8289fe', '0x1c45b6064d938545e4f22ae41cba42c7884c575f']
+]);
+
+function legacyEscrowContract(fundingTxHash: string | null) {
+  return fundingTxHash ? LEGACY_ESCROW_BY_FUNDING_TX.get(fundingTxHash.toLowerCase()) : undefined;
 }
 
 function toRow(bounty: Bounty) {
@@ -167,6 +191,7 @@ function toRow(bounty: Bounty) {
     criteria: bounty.criteria,
     status: bounty.status,
     onchain_id: bounty.onchainId ?? null,
+    escrow_contract_address: bounty.escrowContractAddress?.toLowerCase() ?? null,
     funding_tx_hash: bounty.fundingTxHash ?? null,
     payout_tx_hash: bounty.payoutTxHash ?? null,
     refund_tx_hash: bounty.refundTxHash ?? null,

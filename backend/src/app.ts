@@ -53,6 +53,9 @@ export function buildApp() {
       tokenDecimals: env.GOAT_FLOW_TOKEN_DECIMALS,
       standardPrice: env.STANDARD_REVIEW_PRICE,
       securityPrice: env.SECURITY_REVIEW_PRICE
+    },
+    {
+      escrowContractAddress: env.OWL_PAY_CONTRACT_ADDRESS as `0x${string}` | ''
     }
   );
 

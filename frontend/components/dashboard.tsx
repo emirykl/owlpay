@@ -14,6 +14,7 @@ import { useAuth } from './auth-provider';
 import { useWallet } from './wallet-provider';
 import { owlpayApi, type Bounty, type BountyApplication, type BountyStatus } from '@/lib/api';
 import { getBountyDeadlineState } from '@/lib/bounty-deadline';
+import { bountyTokenSymbol } from '@/lib/bounty-token';
 
 type WorkspaceView = 'explore' | 'owned' | 'applications';
 type ExploreStatus = 'ALL' | BountyStatus;
@@ -117,6 +118,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
   }, [address, exploreQuery, exploreRepository, exploreSort, exploreStatus, items, now, publicItems, userId, view]);
 
   const title = viewTitles[view];
+  const rewardTokenSymbol = network.data?.paymentToken.symbol ?? 'USDC';
 
   return (
     <main className="workspaceShell">
@@ -155,7 +157,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
                 <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
               ) : (
                 <div className="myApplicationList">{myApplications.data?.items.map(({ application, bounty }) => (
-                  <MyApplicationCard application={application} bounty={bounty} key={application.id} now={now} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} />
+                  <MyApplicationCard application={application} bounty={bounty} key={application.id} now={now} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} currentTokenSymbol={rewardTokenSymbol} />
                 ))}</div>
               )}
             </section>
@@ -168,7 +170,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
                   ) : visibleItems.length === 0 ? (
                     <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
                   ) : (
-                    <div className="marketplaceGrid">{visibleItems.map((bounty) => <MarketplaceBountyCard bounty={bounty} key={bounty.id} now={now} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} />)}</div>
+                    <div className="marketplaceGrid">{visibleItems.map((bounty) => <MarketplaceBountyCard bounty={bounty} key={bounty.id} now={now} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} currentTokenSymbol={rewardTokenSymbol} />)}</div>
                   )}
                 </div>
 
@@ -192,7 +194,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
               ) : visibleItems.length === 0 ? (
                 <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
               ) : (
-                <div className="marketplaceGrid">{visibleItems.map((bounty) => <MarketplaceBountyCard bounty={bounty} key={bounty.id} now={now} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} />)}</div>
+                <div className="marketplaceGrid">{visibleItems.map((bounty) => <MarketplaceBountyCard bounty={bounty} key={bounty.id} now={now} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} currentTokenSymbol={rewardTokenSymbol} />)}</div>
               )}
             </section>
           )}
@@ -205,7 +207,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
   );
 }
 
-function MyApplicationCard({ application, bounty, now, onOpen, reduceMotion }: { application: BountyApplication; bounty: Bounty; now: number; onOpen: () => void; reduceMotion: boolean | null }) {
+function MyApplicationCard({ application, bounty, now, onOpen, reduceMotion, currentTokenSymbol }: { application: BountyApplication; bounty: Bounty; now: number; onOpen: () => void; reduceMotion: boolean | null; currentTokenSymbol: string }) {
   const repository = repositoryMeta(bounty.repositoryUrl);
   const needsRevision = bounty.status === 'REVISION_REQUIRED';
   const latestRevisionRequest = bounty.revisionRequests?.at(-1);
@@ -227,7 +229,7 @@ function MyApplicationCard({ application, bounty, now, onOpen, reduceMotion }: {
       </div>
       <div className="myApplicationCardBody"><h2>{bounty.title}</h2><p>{needsRevision && latestRevisionRequest ? latestRevisionRequest.message : application.message}</p></div>
       <div className="myApplicationCardFooter">
-        <div><span>Reward</span><strong>{bounty.rewardAmount} USDC</strong></div>
+        <div><span>Reward</span><strong>{bounty.rewardAmount} {bountyTokenSymbol(bounty, currentTokenSymbol)}</strong></div>
         <div><span>Bounty</span><strong>{statusLabels[bounty.status]}</strong></div>
         <div><span>{deadlineTitle}</span><strong>{deadline.closed ? 'Deadline ended' : deadline.label}</strong></div>
         <ArrowUpRight />
@@ -236,7 +238,7 @@ function MyApplicationCard({ application, bounty, now, onOpen, reduceMotion }: {
   );
 }
 
-function MarketplaceBountyCard({ bounty, now, onOpen, reduceMotion }: { bounty: Bounty; now: number; onOpen: () => void; reduceMotion: boolean | null }) {
+function MarketplaceBountyCard({ bounty, now, onOpen, reduceMotion, currentTokenSymbol }: { bounty: Bounty; now: number; onOpen: () => void; reduceMotion: boolean | null; currentTokenSymbol: string }) {
   const repository = repositoryMeta(bounty.repositoryUrl);
   const applicants = bounty.applicantCount;
   const deadline = getBountyDeadlineState(bounty.deadline, now);
@@ -246,7 +248,7 @@ function MarketplaceBountyCard({ bounty, now, onOpen, reduceMotion }: { bounty: 
     <motion.button className="marketplaceCard" onClick={onOpen} whileHover={reduceMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.995 }}>
       <div className="marketplaceCardTop">
         <div className="marketplaceRepo"><span className="marketplaceAvatar" role="img" aria-label={`${repository.owner} GitHub avatar`} style={{ backgroundImage: `url(${repository.avatarUrl})` }}>{repository.owner.slice(0, 1).toUpperCase()}</span><strong>{repository.fullName}</strong></div>
-        <div className="marketplaceCardPills"><span className={`statusBadge status-${isClosed ? 'closed' : bounty.status.toLowerCase()}`}>{isClosed ? 'Closed' : statusLabels[bounty.status]}</span><span className="marketplaceReward">{bounty.rewardAmount} USDC</span></div>
+        <div className="marketplaceCardPills"><span className={`statusBadge status-${isClosed ? 'closed' : bounty.status.toLowerCase()}`}>{isClosed ? 'Closed' : statusLabels[bounty.status]}</span><span className="marketplaceReward">{bounty.rewardAmount} {bountyTokenSymbol(bounty, currentTokenSymbol)}</span></div>
       </div>
       <div className="marketplaceCardBody"><h2>{bounty.title}</h2><p>{bounty.description}</p></div>
       <div className="marketplaceCardFooter">

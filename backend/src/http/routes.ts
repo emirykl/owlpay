@@ -23,6 +23,11 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     explorerUrl: env.GOAT_EXPLORER_URL,
     contractAddress: env.OWL_PAY_CONTRACT_ADDRESS || null,
     paymentTokenAddress: env.PAYMENT_TOKEN_ADDRESS || null,
+    paymentToken: {
+      address: env.PAYMENT_TOKEN_ADDRESS || null,
+      symbol: env.PAYMENT_TOKEN_SYMBOL,
+      decimals: env.PAYMENT_TOKEN_DECIMALS
+    },
     reviewPaymentToken: {
       address: env.GOAT_FLOW_TOKEN_ADDRESS || null,
       symbol: env.GOAT_FLOW_TOKEN_SYMBOL,

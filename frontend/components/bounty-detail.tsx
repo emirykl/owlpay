@@ -15,6 +15,7 @@ import { WalletButton } from './wallet-button';
 import { IdentityButton } from './identity-button';
 import { getBountyDeadlineState } from '@/lib/bounty-deadline';
 import { getTransactionErrorMessage } from '@/lib/transaction-error';
+import { bountyTokenSymbol } from '@/lib/bounty-token';
 
 const LIVE_SYNC_INTERVAL = 4_000;
 const CONFETTI_COLORS = ['#2f9e67', '#f4c928', '#ef5a4f', '#f19a26', '#4f7bd9'];
@@ -52,6 +53,8 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const myApplications = useQuery({ queryKey: ['my-applications', user?.id], queryFn: owlpayApi.listMyApplications, enabled: Boolean(user) && !isOwner, refetchInterval: LIVE_SYNC_INTERVAL, refetchIntervalInBackground: false, retry: false });
   const myApplication = myApplications.data?.items.find((item) => item.application.bountyId === bounty.id)?.application;
   const network = useQuery({ queryKey: ['network'], queryFn: owlpayApi.network, retry: false });
+  const bountyContractAddress = (bounty.escrowContractAddress ?? contractAddress) as `0x${string}` | undefined;
+  const bountyContractReady = Boolean(bountyContractAddress && /^0x[a-fA-F0-9]{40}$/.test(bountyContractAddress));
   const deadline = getBountyDeadlineState(bounty.deadline, now);
   const contributorDeadline = getBountyDeadlineState(bounty.contributorDeadline ?? bounty.deadline, now);
   const maintainerDeadline = getBountyDeadlineState(bounty.maintainerReviewDeadline ?? bounty.deadline, now);
@@ -65,6 +68,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const standardPrice = Number(network.data?.reviewPrices.standard ?? 1);
   const securityPrice = Number(network.data?.reviewPrices.security ?? 2);
   const reviewTokenSymbol = network.data?.reviewPaymentToken.symbol ?? 'USDC';
+  const rewardTokenSymbol = bountyTokenSymbol(bounty, network.data?.paymentToken.symbol ?? 'USDC');
   const paidReviewAmount = Number(bounty.reviewPaidAmount ?? (bounty.reviewPaymentStatus === 'PAID' ? bounty.reviewPrice : 0));
   const securityActive = bounty.reviewPlan === 'SECURITY' && paidReviewAmount >= securityPrice && ['PAID', 'CONSUMED'].includes(bounty.reviewPaymentStatus);
   const standardActive = !securityActive && bounty.reviewPlan === 'STANDARD' && paidReviewAmount >= standardPrice && ['PAID', 'CONSUMED'].includes(bounty.reviewPaymentStatus);
@@ -109,12 +113,12 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const assignMutation = useMutation({
     mutationFn: async (application: BountyApplication) => {
       let assignmentTxHash: string | undefined;
-      if (contractsReady && contractAddress && bounty.onchainId && /^\d+$/.test(bounty.onchainId)) {
+      if (contractsReady && bountyContractReady && bountyContractAddress && bounty.onchainId && /^\d+$/.test(bounty.onchainId)) {
         if (!address || address.toLowerCase() !== bounty.ownerAddress.toLowerCase()) {
           throw new Error('Connect the wallet that funded this bounty before assigning a developer.');
         }
         assignmentTxHash = await sendTransaction({
-          to: contractAddress,
+          to: bountyContractAddress,
           data: encodeFunctionData({ abi: owlPayAbi, functionName: 'assignDeveloper', args: [BigInt(bounty.onchainId), application.developerAddress as `0x${string}`] })
         });
         await goatPublicClient.waitForTransactionReceipt({ hash: assignmentTxHash as `0x${string}` });
@@ -134,9 +138,9 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
       }
       const prepared = await owlpayApi.prepareSubmission(bounty.id, pullRequestUrl, address);
       let submissionTxHash: string | undefined;
-      if (contractsReady && contractAddress && bounty.onchainId && /^\d+$/.test(bounty.onchainId)) {
+      if (contractsReady && bountyContractReady && bountyContractAddress && bounty.onchainId && /^\d+$/.test(bounty.onchainId)) {
         submissionTxHash = await sendTransaction({
-          to: contractAddress,
+          to: bountyContractAddress,
           data: encodeFunctionData({ abi: owlPayAbi, functionName: 'submitWork', args: [BigInt(bounty.onchainId), prepared.submissionHash] })
         });
         await goatPublicClient.waitForTransactionReceipt({ hash: submissionTxHash as `0x${string}` });
@@ -209,9 +213,9 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const refundMutation = useMutation({
     mutationFn: async () => {
       if (!address || address.toLowerCase() !== bounty.ownerAddress.toLowerCase()) throw new Error('Connect the wallet that funded this bounty.');
-      if (!contractsReady || !contractAddress || !bounty.onchainId || !/^\d+$/.test(bounty.onchainId)) throw new Error('The escrow contract is not configured for this bounty.');
+      if (!contractsReady || !bountyContractReady || !bountyContractAddress || !bounty.onchainId || !/^\d+$/.test(bounty.onchainId)) throw new Error('The escrow contract is not configured for this bounty.');
       const refundTxHash = await sendTransaction({
-        to: contractAddress,
+        to: bountyContractAddress,
         data: encodeFunctionData({ abi: owlPayAbi, functionName: 'refundExpiredBounty', args: [BigInt(bounty.onchainId)] })
       });
       await goatPublicClient.waitForTransactionReceipt({ hash: refundTxHash });
@@ -253,7 +257,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
             <p>{bounty.description}</p>
           </div>
           <dl className="detailStats">
-            <div><dt>Reward</dt><dd>{bounty.rewardAmount} otUSDC</dd></div>
+            <div><dt>Reward</dt><dd>{bounty.rewardAmount} {rewardTokenSymbol}</dd></div>
             {!isClosed && <div><dt>Applications</dt><dd>{bounty.applicantCount}</dd></div>}
             <div><dt>Deadline</dt><dd>{deadlineLabel}</dd></div>
           </dl>
@@ -310,13 +314,13 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
               <ArrowUpRight />
             </a>
             <span className="assignedMeta">{isAssignedDeveloper
-              ? `Estimated payout ${estimatedPayout.toFixed(2)} otUSDC · ${(platformFeeRate * 100).toFixed(0)}% fee`
+              ? `Estimated payout ${estimatedPayout.toFixed(2)} ${rewardTokenSymbol} · ${(platformFeeRate * 100).toFixed(0)}% fee`
               : bounty.assignedDeveloperAddress ? `${bounty.assignedDeveloperAddress.slice(0, 8)}…${bounty.assignedDeveloperAddress.slice(-6)}` : 'Verified GitHub developer'}</span>
           </div>
         )}
 
         {isAssignedDeveloper && bounty.status === 'PAID' && (
-          <ContributorPayoutCelebration bountyId={bounty.id} payoutTxHash={bounty.payoutTxHash} amount={estimatedPayout.toFixed(2)} />
+          <ContributorPayoutCelebration bountyId={bounty.id} payoutTxHash={bounty.payoutTxHash} amount={estimatedPayout.toFixed(2)} tokenSymbol={rewardTokenSymbol} />
         )}
 
         {bounty.submission && <div className="submissionCard"><span>Submitted commit</span><strong>{bounty.submission.commitSha.slice(0, 10)}</strong><a href={bounty.submission.pullRequestUrl} target="_blank" rel="noreferrer">Open pull request <ArrowUpRight /></a></div>}
@@ -400,7 +404,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   );
 }
 
-function ContributorPayoutCelebration({ bountyId, payoutTxHash, amount }: { bountyId: string; payoutTxHash?: string; amount: string }) {
+function ContributorPayoutCelebration({ bountyId, payoutTxHash, amount, tokenSymbol }: { bountyId: string; payoutTxHash?: string; amount: string; tokenSymbol: string }) {
   const reduceMotion = useReducedMotion();
   const [burst, setBurst] = useState(false);
 
@@ -438,7 +442,7 @@ function ContributorPayoutCelebration({ bountyId, payoutTxHash, amount }: { boun
       </div>}
       <motion.article className="contributorWinCard" role="status" initial={reduceMotion ? false : { opacity: 0, y: 10, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', stiffness: 330, damping: 28 }}>
         <span className="contributorWinIcon"><Check /></span>
-        <div><small>Bounty successfully completed</small><h3>You earned {amount} otUSDC</h3><p>The maintainer approved your work and the escrow payment was released to your payout wallet.</p></div>
+        <div><small>Bounty successfully completed</small><h3>You earned {amount} {tokenSymbol}</h3><p>The maintainer approved your work and the escrow payment was released to your payout wallet.</p></div>
         {payoutTxHash && <a href={`${goatTestnet.blockExplorers.default.url}/tx/${payoutTxHash}`} target="_blank" rel="noreferrer">View payout <ArrowUpRight /></a>}
       </motion.article>
     </>

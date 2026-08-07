@@ -11,7 +11,6 @@ export const owlPayAbi = parseAbi([
 export const erc20Abi = parseAbi([
   'function approve(address spender, uint256 amount) returns (bool)',
   'function transfer(address recipient, uint256 amount) returns (bool)',
-  'function claim()',
   'function balanceOf(address account) view returns (uint256)',
   'function decimals() view returns (uint8)'
 ]);

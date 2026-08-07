@@ -20,7 +20,7 @@ npm run dev
 
 The connected wallet is forced onto GOAT Testnet3 (chain ID `48816`). A contract address is optional during local demo mode and required before enabling real testnet writes.
 
-With deployed addresses configured, the creation wizard can claim faucet-only `otUSDC`, approve and lock the gross bounty reward, and display the 3% settlement fee before funding. Standard review is selected by default, while maintainers may choose free manual review or the deeper security package. Paid Owl Agent reviews are purchased once while the bounty is funded, then start automatically when a pull request arrives. A paid review remains retryable until a report succeeds. Review payment is separate from escrow; the assigned developer never pays it.
+With deployed addresses configured, the creation wizard uses GOAT Testnet3 USDC, approves and locks the gross bounty reward, and displays the 3% settlement fee before funding. Standard review is selected by default, while maintainers may choose free manual review or the deeper security package. Paid Owl Agent reviews are purchased once while the bounty is funded, then start automatically when a pull request arrives. A paid review remains retryable until a report succeeds; the assigned developer never pays it.
 
 For GitHub sign-in, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The publishable key is intentionally browser-visible and relies on the RLS policies in the backend migration. Never place a Supabase secret/service-role key in this application.
 

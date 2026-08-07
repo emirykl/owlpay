@@ -18,6 +18,8 @@ const envSchema = z.object({
   GOAT_EXPLORER_URL: z.string().url().default('https://explorer.testnet3.goat.network'),
   OWL_PAY_CONTRACT_ADDRESS: optionalAddress.default(''),
   PAYMENT_TOKEN_ADDRESS: optionalAddress.default(''),
+  PAYMENT_TOKEN_SYMBOL: z.string().min(1).default('USDC'),
+  PAYMENT_TOKEN_DECIMALS: z.coerce.number().int().min(0).max(255).default(6),
   PLATFORM_TREASURY_ADDRESS: optionalAddress.default(''),
   PLATFORM_FEE_BPS: z.coerce.number().int().min(0).max(500).default(300),
   STANDARD_REVIEW_PRICE: z.string().regex(/^\d+(\.\d{1,6})?$/).default('1'),

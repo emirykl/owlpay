@@ -171,6 +171,7 @@ export interface Bounty extends CreateBountyInput {
   status: BountyStatus;
   createdAt: string;
   onchainId?: string;
+  escrowContractAddress?: string;
   fundingTxHash?: string;
   payoutTxHash?: string;
   refundTxHash?: string;

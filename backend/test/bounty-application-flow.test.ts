@@ -131,7 +131,8 @@ describe('bounty application and assignment flow', () => {
       settlement,
       payment.gateway,
       payment.verifier,
-      reviewConfig
+      reviewConfig,
+      { escrowContractAddress: '0x00000000000000000000000000000000000000aa' }
     );
     const draft = await service.create({
       title: 'Manually review this pull request',
@@ -144,7 +145,12 @@ describe('bounty application and assignment flow', () => {
       criteria: [{ id: 'manual', description: 'Maintainer accepts the implementation', mandatory: true, method: 'manual' }]
     }, owner, 'github-token');
 
-    expect(draft).toMatchObject({ reviewPlan: 'NONE', reviewPrice: '0', reviewPaymentStatus: 'NOT_REQUIRED' });
+    expect(draft).toMatchObject({
+      reviewPlan: 'NONE',
+      reviewPrice: '0',
+      reviewPaymentStatus: 'NOT_REQUIRED',
+      escrowContractAddress: '0x00000000000000000000000000000000000000aa'
+    });
     const optionalStandard = await service.createReviewPaymentOrder(draft.id, owner, 'STANDARD');
     expect(optionalStandard.amountWei).toBe('2000000');
     await service.markFunded(draft.id, '7', `0x${'1'.repeat(64)}`, owner.id);
