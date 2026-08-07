@@ -6,9 +6,7 @@ import { env } from './config/env.js';
 // entrypoint. Passing the factory keeps app construction independently testable.
 const app = buildApp(Fastify);
 
-try {
-  await app.listen({ port: env.PORT, host: env.HOST });
-} catch (error) {
+app.listen({ port: env.PORT, host: env.HOST }).catch((error: unknown) => {
   app.log.error(error);
   process.exit(1);
-}
+});
