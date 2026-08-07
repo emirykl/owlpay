@@ -52,6 +52,9 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
   const applications = useQuery({ queryKey: ['bounty-applications', bounty.id], queryFn: () => owlpayApi.listBountyApplications(bounty.id), enabled: isOwner, refetchInterval: LIVE_SYNC_INTERVAL, refetchIntervalInBackground: false, retry: false });
   const myApplications = useQuery({ queryKey: ['my-applications', user?.id], queryFn: owlpayApi.listMyApplications, enabled: Boolean(user) && !isOwner, refetchInterval: LIVE_SYNC_INTERVAL, refetchIntervalInBackground: false, retry: false });
   const myApplication = myApplications.data?.items.find((item) => item.application.bountyId === bounty.id)?.application;
+  const applicationSlots = useQuery({ queryKey: ['application-slots', user?.id], queryFn: owlpayApi.getApplicationSlots, enabled: Boolean(user) && !isOwner, retry: false });
+  const slotsRemaining = applicationSlots.data?.remaining ?? null;
+  const slotsFull = slotsRemaining !== null && slotsRemaining <= 0;
   const network = useQuery({ queryKey: ['network'], queryFn: owlpayApi.network, retry: false });
   const bountyContractAddress = (bounty.escrowContractAddress ?? contractAddress) as `0x${string}` | undefined;
   const bountyContractReady = Boolean(bountyContractAddress && /^0x[a-fA-F0-9]{40}$/.test(bountyContractAddress));
@@ -106,7 +109,8 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['bounties'] }),
         queryClient.invalidateQueries({ queryKey: ['bounty', bounty.id] }),
-        queryClient.invalidateQueries({ queryKey: ['my-applications', user?.id] })
+        queryClient.invalidateQueries({ queryKey: ['my-applications', user?.id] }),
+        queryClient.invalidateQueries({ queryKey: ['application-slots'] })
       ]);
     }
   });
@@ -299,8 +303,10 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
               <div className="connectionGate providerGate"><span className="connectionProviderIcon linkConnectionIcon"><LinkMark /></span><div><strong>Link GitHub and wallet</strong><p>Sign one message before applying.</p></div><IdentityButton /></div>
             ) : myApplication ? (
               <div className="applicationSent"><span className={`applicationState state-${myApplication.status.toLowerCase()}`}>{myApplication.status}</span><div><strong>Application sent</strong><p>{myApplication.message}</p></div></div>
+            ) : slotsFull ? (
+              <div className="applicationSlotsFull"><strong>All application slots are in use</strong><p>You have {applicationSlots.data?.max ?? 5} active applications. Withdraw a pending application to free a slot.</p></div>
             ) : (
-              <div className="applicationForm"><textarea value={applicationMessage} onChange={(event) => setApplicationMessage(event.target.value)} minLength={20} maxLength={600} rows={4} placeholder="Briefly explain your experience and how you would approach this bounty." /><div><small>{applicationMessage.length}/600 · minimum 20 characters</small><button className="primaryButton" onClick={() => applyMutation.mutate()} disabled={applyMutation.isPending || applicationMessage.trim().length < 20}>{applyMutation.isPending ? 'Sending…' : 'Send application'}</button></div></div>
+              <div className="applicationForm">{applicationSlots.data && <div className="applicationSlotHint">{applicationSlots.data.active}/{applicationSlots.data.max} slots used · {applicationSlots.data.remaining} remaining</div>}<textarea value={applicationMessage} onChange={(event) => setApplicationMessage(event.target.value)} minLength={20} maxLength={600} rows={4} placeholder="Briefly explain your experience and how you would approach this bounty." /><div><small>{applicationMessage.length}/600 · minimum 20 characters</small><button className="primaryButton" onClick={() => applyMutation.mutate()} disabled={applyMutation.isPending || applicationMessage.trim().length < 20}>{applyMutation.isPending ? 'Sending…' : 'Send application'}</button></div></div>
             )}
             {applyMutation.error && <p className="formError" role="alert">{applyMutation.error.message}</p>}
           </div>

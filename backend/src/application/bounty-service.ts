@@ -11,6 +11,7 @@ const MAINTAINER_REVIEW_PERIOD_MS = 7 * DAY_MS;
 const REVISION_RESPONSE_PERIOD_MS = 2 * DAY_MS;
 const APPEAL_PERIOD_MS = 2 * DAY_MS;
 const MAX_REVISIONS = 2;
+const MAX_ACTIVE_APPLICATIONS = 5;
 const AUTO_PAYOUT_SCORE = 0.6;
 
 export class BountyService {
@@ -206,6 +207,8 @@ export class BountyService {
     if (bounty.ownerUserId === actor.id) throw new DomainError('The bounty owner cannot apply to their own bounty', 403, 'OWNER_CANNOT_APPLY');
     const existing = await this.applications.findByBountyAndDeveloper(id, actor.id);
     if (existing) throw new DomainError('You already applied to this bounty', 409, 'ALREADY_APPLIED');
+    const activeCount = await this.applications.countActiveByDeveloper(actor.id);
+    if (activeCount >= MAX_ACTIVE_APPLICATIONS) throw new DomainError('You have reached the maximum of 5 active applications. Withdraw a pending application to free a slot.', 409, 'MAX_ACTIVE_APPLICATIONS_REACHED');
     const now = new Date().toISOString();
     const application: BountyApplication = {
       id: randomUUID(),
@@ -232,6 +235,19 @@ export class BountyService {
   async listMyApplications(actor: AuthUser) {
     const applications = await this.applications.listByDeveloper(actor.id);
     return Promise.all(applications.map(async (application) => ({ application, bounty: await this.get(application.bountyId) })));
+  }
+
+  async withdrawApplication(applicationId: string, actor: AuthUser) {
+    const application = await this.applications.get(applicationId);
+    if (!application || application.developerUserId !== actor.id) throw new DomainError('Application not found', 404, 'APPLICATION_NOT_FOUND');
+    if (application.status !== 'PENDING') throw new DomainError('Only pending applications can be withdrawn', 409, 'APPLICATION_NOT_PENDING');
+    await this.applications.withdraw(applicationId);
+    return { ...application, status: 'WITHDRAWN' as const, updatedAt: new Date().toISOString() };
+  }
+
+  async getApplicationSlots(actor: AuthUser) {
+    const activeCount = await this.applications.countActiveByDeveloper(actor.id);
+    return { active: activeCount, max: MAX_ACTIVE_APPLICATIONS, remaining: Math.max(0, MAX_ACTIVE_APPLICATIONS - activeCount) };
   }
 
   async getSubmissionReportEvidence(id: string, actor: AuthUser) {
