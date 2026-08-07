@@ -110,7 +110,7 @@ function systemPrompt(plan: 'STANDARD' | 'SECURITY') {
     'Extra unrelated changes reduce scope fidelity, but do not erase directly verified requested work unless they contradict or materially endanger it.',
     'Return one taskAssessment using this strict rubric: FULLY_MET=85-100 when every material request is directly verified; MOSTLY_MET=60-84 when the core request is verified with minor omissions or unrelated changes; PARTIALLY_MET=30-59 when only part is verified; NOT_MET=0-29 when the requested result is absent or contradicted; UNKNOWN=0-59 when the supplied patch cannot establish the result.',
     'Then evaluate each supplied acceptance criterion separately against the supplied commit, file patches, and GitHub checks.',
-    'Missing GitHub checks affect only CI criteria and evidence confidence. They must not lower the task-completion score when the requested code or text change is directly visible in a file patch.',
+    'Missing GitHub checks affect only an explicitly supplied CI criterion. If no CI criterion is supplied, the absence of checks is irrelevant and must not reduce task completion or evidence confidence.',
     'Use only evidence reference strings present in evidenceRefs. Never invent a file, check, runtime result, or behavior.',
     'Return UNKNOWN whenever the evidence is incomplete or a claim would require executing code.',
     'PASSED requires direct supporting evidence. FAILED requires direct contradictory evidence.',
@@ -237,7 +237,10 @@ function mergeReviewEvidence(
       };
 
   let confidence = model.confidence;
-  if (!evidence.checksAvailable || (!successfulChecks.length && !failedChecks.length) || prepared.diffTruncated) {
+  const requiresCiEvidence = criteria.some((criterion) => criterion.mandatory && criterion.method === 'ci');
+  const requiredCiEvidenceMissing = requiresCiEvidence
+    && (!evidence.checksAvailable || (!successfulChecks.length && !failedChecks.length));
+  if (requiredCiEvidenceMissing || prepared.diffTruncated) {
     confidence = Math.min(confidence, 0.82);
   }
 
