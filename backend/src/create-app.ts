@@ -60,8 +60,24 @@ export function buildApp(createFastify: typeof Fastify = Fastify) {
     }
   );
 
+  const allowedOrigins = env.FRONTEND_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean);
   app.register(cors, {
-    origin: env.FRONTEND_ORIGIN,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (server-to-server, curl, mobile)
+      if (!origin) return callback(null, true);
+      // Check exact match against configured origins
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      // Allow Vercel preview deployment URLs for configured domains
+      if (allowedOrigins.some((allowed) => {
+        try {
+          const host = new URL(allowed).hostname;
+          // Match *.vercel.app preview URLs for the same Vercel team
+          if (host.endsWith('.vercel.app') && origin.endsWith('.vercel.app')) return true;
+        } catch { /* ignore */ }
+        return false;
+      })) return callback(null, true);
+      callback(new Error('CORS: origin not allowed'), false);
+    },
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Agent-Key', 'X-GitHub-Token'],
     exposedHeaders: ['PAYMENT-REQUIRED']
