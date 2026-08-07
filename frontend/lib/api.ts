@@ -164,7 +164,11 @@ export interface ReviewPaymentOrder {
   clientTxHash?: string;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
+
+if (!API_URL && typeof window !== 'undefined') {
+  console.error('[OwlPay] NEXT_PUBLIC_API_URL is not set. API calls will fail. Set this environment variable in Vercel to your backend deployment URL.');
+}
 
 interface ApiErrorBody {
   message?: string;

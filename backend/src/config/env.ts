@@ -8,7 +8,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
   HOST: z.string().default('127.0.0.1'),
-  FRONTEND_ORIGIN: z.string().url().default('http://localhost:3000'),
+  FRONTEND_ORIGIN: z.string().default('http://localhost:3000'),
   PERSISTENCE_MODE: z.enum(['memory', 'supabase']).default('memory'),
   SUPABASE_URL: z.union([z.literal(''), z.string().url()]).default(''),
   SUPABASE_SECRET_KEY: z.string().default(''),
