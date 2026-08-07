@@ -40,4 +40,17 @@ export class InMemoryApplicationRepository implements ApplicationRepository {
       this.applications.set(id, { ...application, status: id === acceptedApplicationId ? 'ACCEPTED' : 'REJECTED', updatedAt: new Date().toISOString() });
     }
   }
+
+  async countActiveByDeveloper(developerUserId: string) {
+    return [...this.applications.values()].filter(
+      (item) => item.developerUserId === developerUserId && (item.status === 'PENDING' || item.status === 'ACCEPTED')
+    ).length;
+  }
+
+  async withdraw(applicationId: string) {
+    const application = this.applications.get(applicationId);
+    if (application) {
+      this.applications.set(applicationId, { ...application, status: 'WITHDRAWN', updatedAt: new Date().toISOString() });
+    }
+  }
 }

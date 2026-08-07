@@ -14,6 +14,8 @@ export interface ApplicationRepository {
   countByBounties(bountyIds: string[]): Promise<Record<string, number>>;
   save(application: BountyApplication): Promise<void>;
   resolveAssignment(bountyId: string, acceptedApplicationId: string): Promise<void>;
+  countActiveByDeveloper(developerUserId: string): Promise<number>;
+  withdraw(applicationId: string): Promise<void>;
 }
 
 export interface SettlementGateway {

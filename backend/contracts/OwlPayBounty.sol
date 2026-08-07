@@ -17,6 +17,7 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
     uint64 public constant MAINTAINER_REVIEW_PERIOD = 7 days;
     uint64 public constant REVISION_RESPONSE_PERIOD = 2 days;
     uint8 public constant MAX_REVISIONS = 2;
+    uint8 public constant MAX_ACTIVE_ASSIGNMENTS = 5;
 
     enum Status {
         None,
@@ -53,6 +54,7 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
 
     mapping(uint256 bountyId => Bounty bounty) private _bounties;
     mapping(bytes32 submissionHash => bool used) public usedSubmissionHashes;
+    mapping(address developer => uint8 count) public activeAssignmentCount;
 
     event BountyCreated(
         uint256 indexed bountyId,
@@ -91,6 +93,7 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
     error MaximumRevisionsReached();
     error ReviewDeadlinePassed();
     error ReviewWindowTooShort();
+    error MaxActiveAssignmentsReached();
 
     constructor(
         address admin,
@@ -146,6 +149,8 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
         if (msg.sender != bounty.owner) revert NotBountyOwner();
         if (bounty.status != Status.Open) revert InvalidState(bounty.status);
         if (developer == address(0)) revert InvalidAddress();
+        if (activeAssignmentCount[developer] >= MAX_ACTIVE_ASSIGNMENTS) revert MaxActiveAssignmentsReached();
+        activeAssignmentCount[developer] += 1;
         bounty.developer = developer;
         bounty.status = Status.Assigned;
         emit DeveloperAssigned(bountyId, developer);
@@ -211,6 +216,7 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
         uint256 developerPayout = grossReward - platformFee;
         address developer = bounty.developer;
         bounty.status = Status.Paid;
+        if (activeAssignmentCount[developer] > 0) activeAssignmentCount[developer] -= 1;
 
         if (platformFee != 0) paymentToken.safeTransfer(treasury, platformFee);
         paymentToken.safeTransfer(developer, developerPayout);
@@ -227,6 +233,9 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
         if (verificationHash == bytes32(0)) revert InvalidAmount();
         if (block.timestamp <= bounty.maintainerReviewDeadline) revert DeadlineNotPassed();
         bounty.verificationHash = verificationHash;
+        if (bounty.developer != address(0) && activeAssignmentCount[bounty.developer] > 0) {
+            activeAssignmentCount[bounty.developer] -= 1;
+        }
         if (approve) {
             bounty.status = Status.Approved;
             emit SubmissionApproved(bountyId, verificationHash);
@@ -244,6 +253,9 @@ contract OwlPayBounty is AccessControl, Pausable, ReentrancyGuard {
         if (block.timestamp <= bounty.contributorDeadline) revert DeadlineNotPassed();
         if (bounty.status != Status.Open && bounty.status != Status.Assigned && bounty.status != Status.RevisionRequired) {
             revert InvalidState(bounty.status);
+        }
+        if (bounty.developer != address(0) && activeAssignmentCount[bounty.developer] > 0) {
+            activeAssignmentCount[bounty.developer] -= 1;
         }
         bounty.status = Status.Refunded;
         paymentToken.safeTransfer(bounty.owner, bounty.rewardAmount);

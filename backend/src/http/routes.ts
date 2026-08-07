@@ -95,6 +95,14 @@ export async function registerRoutes(
     const items = await service.listMyApplications(actor);
     return { items: items.map((item) => ({ ...item, bounty: bountyForViewer(item.bounty, actor.id) })) };
   });
+  app.get('/api/applications/slots', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    return service.getApplicationSlots(actor);
+  });
+  app.post<{ Params: { applicationId: string } }>('/api/applications/:applicationId/withdraw', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    return service.withdrawApplication(request.params.applicationId, actor);
+  });
   app.get<{ Params: { id: string } }>('/api/bounties/:id', async (request) => {
     const actor = await auth.optionalUser(request.headers.authorization);
     const bounty = await service.get(request.params.id);

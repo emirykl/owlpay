@@ -63,6 +63,17 @@ export class SupabaseApplicationRepository implements ApplicationRepository {
     const accepted = await this.client.from('bounty_applications').update({ status: 'ACCEPTED', updated_at: updatedAt }).eq('id', acceptedApplicationId).eq('bounty_id', bountyId);
     if (accepted.error) throw new Error(`Supabase application acceptance failed: ${accepted.error.message}`);
   }
+
+  async countActiveByDeveloper(developerUserId: string) {
+    const { count, error } = await this.client.from('bounty_applications').select('*', { count: 'exact', head: true }).eq('developer_user_id', developerUserId).in('status', ['PENDING', 'ACCEPTED']);
+    if (error) throw new Error(`Supabase active application count failed: ${error.message}`);
+    return count ?? 0;
+  }
+
+  async withdraw(applicationId: string) {
+    const { error } = await this.client.from('bounty_applications').update({ status: 'WITHDRAWN', updated_at: new Date().toISOString() }).eq('id', applicationId);
+    if (error) throw new Error(`Supabase application withdrawal failed: ${error.message}`);
+  }
 }
 
 function fromRow(row: ApplicationRow): BountyApplication {
