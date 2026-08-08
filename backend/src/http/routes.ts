@@ -21,7 +21,8 @@ export async function registerRoutes(
     status: 'ok',
     service: 'owlpay-api',
     mode: env.ENABLE_TESTNET_WRITES ? 'testnet-write' : 'demo',
-    persistence: env.PERSISTENCE_MODE
+    persistence: env.PERSISTENCE_MODE,
+    uptime: Math.floor(process.uptime())
   }));
 
   app.get('/api/network', async () => ({

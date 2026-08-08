@@ -110,14 +110,22 @@ export function buildApp(createFastify: typeof Fastify = Fastify) {
         resolutionRunning = false;
       }
     };
-    const resolutionTimer = setInterval(resolveDueBounties, env.RESOLUTION_WORKER_INTERVAL_MS);
+    const resolutionTimer = setInterval(() => { void resolveDueBounties(); }, env.RESOLUTION_WORKER_INTERVAL_MS);
     resolutionTimer.unref();
     app.addHook('onReady', resolveDueBounties);
-    app.addHook('onClose', async () => clearInterval(resolutionTimer));
+    app.addHook('onClose', () => { clearInterval(resolutionTimer); });
   }
+
+  app.addHook('onRequest', async (request) => {
+    (request as unknown as Record<string, number>).__startTime = performance.now();
+  });
 
   app.addHook('onSend', async (request, reply) => {
     reply.header('x-request-id', request.id);
+    const startTime = (request as unknown as Record<string, number>).__startTime;
+    if (typeof startTime === 'number') {
+      reply.header('x-response-time', `${(performance.now() - startTime).toFixed(1)}ms`);
+    }
   });
 
   app.setNotFoundHandler((_request, reply) => {

@@ -125,6 +125,23 @@ describe('response headers', () => {
     });
     expect(response.headers['x-request-id']).toBe(clientId);
   });
+
+  it('includes x-response-time header', async () => {
+    const response = await app.inject({ method: 'GET', url: '/health' });
+    const responseTime = response.headers['x-response-time'] as string;
+    expect(responseTime).toBeDefined();
+    expect(responseTime).toMatch(/^\d+(\.\d+)?ms$/);
+  });
+});
+
+describe('health endpoint', () => {
+  it('includes uptime in seconds', async () => {
+    const response = await app.inject({ method: 'GET', url: '/health' });
+    const body = response.json();
+    expect(body.uptime).toBeDefined();
+    expect(typeof body.uptime).toBe('number');
+    expect(body.uptime).toBeGreaterThanOrEqual(0);
+  });
 });
 
 describe('error handler', () => {
