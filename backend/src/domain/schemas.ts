@@ -4,8 +4,8 @@ export const addressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid EV
 export const bytes32Schema = z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'Invalid bytes32 value');
 
 export const criterionSchema = z.object({
-  id: z.string().min(1).max(64),
-  description: z.string().min(3).max(500),
+  id: z.string().trim().min(1).max(64),
+  description: z.string().trim().min(3).max(500),
   mandatory: z.boolean().default(true),
   method: z.enum(['github', 'ci', 'static-analysis', 'manual']).default('github')
 });
@@ -27,8 +27,8 @@ export const bountyStatusSchema = z.enum([
 ]);
 
 export const createBountySchema = z.object({
-  title: z.string().min(5).max(120),
-  description: z.string().min(10).max(4000),
+  title: z.string().trim().min(5).max(120),
+  description: z.string().trim().min(10).max(4000),
   repositoryUrl: z.string().url().regex(/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/),
   ownerAddress: addressSchema,
   rewardAmount: z.string().regex(/^\d+(\.\d{1,6})?$/),
@@ -67,17 +67,17 @@ export const createApplicationSchema = z.object({
 });
 
 export const criterionResultSchema = z.object({
-  criterionId: z.string(),
+  criterionId: z.string().trim().min(1),
   status: z.enum(['PASSED', 'FAILED', 'UNKNOWN']),
   evidence: z.array(z.string()).max(20),
-  summary: z.string().max(1000)
+  summary: z.string().trim().max(1000)
 });
 
 export const taskAssessmentSchema = z.object({
   status: z.enum(['FULLY_MET', 'MOSTLY_MET', 'PARTIALLY_MET', 'NOT_MET', 'UNKNOWN']),
   score: z.number().int().min(0).max(100),
   evidence: z.array(z.string()).max(10),
-  summary: z.string().max(1000)
+  summary: z.string().trim().max(1000)
 });
 
 export const verificationInputSchema = z.object({

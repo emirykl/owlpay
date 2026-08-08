@@ -23,7 +23,11 @@ import { registerRoutes } from './http/routes.js';
 import { runAfterResponse } from './infrastructure/background-task.js';
 
 export function buildApp(createFastify: typeof Fastify = Fastify) {
-  const app = createFastify({ logger: env.NODE_ENV !== 'test' });
+  const app = createFastify({
+    logger: env.NODE_ENV !== 'test',
+    genReqId: () => crypto.randomUUID(),
+    requestIdHeader: 'x-request-id'
+  });
   const supabase = env.PERSISTENCE_MODE === 'supabase'
     ? createSupabaseAdminClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY)
     : null;
@@ -110,6 +114,10 @@ export function buildApp(createFastify: typeof Fastify = Fastify) {
     app.addHook('onReady', resolveDueBounties);
     app.addHook('onClose', async () => clearInterval(resolutionTimer));
   }
+
+  app.addHook('onSend', async (request, reply) => {
+    reply.header('x-request-id', request.id);
+  });
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ZodError) {
