@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import type { BountyService } from '../application/bounty-service.js';
 import type { AuthVerifier } from '../application/auth.js';
 import type { WalletIdentity } from '../application/wallet-identity.js';
-import { addressSchema, appealResolutionSchema, bytes32Schema, createApplicationSchema, createBountySchema, requestRevisionSchema, submitWorkSchema, verificationInputSchema } from '../domain/schemas.js';
+import { appealResolutionSchema, bountyAssignSchema, bountyFundedSchema, bountyRefundedSchema, confirmReviewPaymentSchema, createApplicationSchema, createBountySchema, requestRevisionSchema, reviewPaymentRequestSchema, submitWorkSchema, verificationInputSchema, walletChallengeSchema, walletVerifySchema } from '../domain/schemas.js';
+import { DomainError } from '../domain/errors.js';
 import { env } from '../config/env.js';
 import { getNetworkStatus } from '../infrastructure/goat-client.js';
 import { bountyForViewer } from '../application/bounty-visibility.js';
@@ -46,7 +47,7 @@ export async function registerRoutes(
     status: await getNetworkStatus()
   }));
 
-  app.get('/api/cron/resolve-due', async (request, reply) => {
+  app.get('/api/cron/resolve-due', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (request, reply) => {
     if (!env.CRON_SECRET || request.headers.authorization !== `Bearer ${env.CRON_SECRET}`) {
       return reply.code(401).send({ code: 'UNAUTHORIZED', message: !env.CRON_SECRET ? 'CRON_SECRET is not configured' : 'Cron authorization is required' });
     }
@@ -64,20 +65,16 @@ export async function registerRoutes(
     return { items: await service.listManageableRepositories(actor, readGitHubToken(request.headers['x-github-token'])) };
   });
 
-  app.post('/api/wallet/challenge', async (request) => {
+  app.post('/api/wallet/challenge', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
-    const body = request.body as { address?: string };
-    const address = addressSchema.parse(body.address);
+    const { address } = walletChallengeSchema.parse(request.body);
     return walletIdentity.createChallenge(actor, address);
   });
 
-  app.post('/api/wallet/verify', async (request) => {
+  app.post('/api/wallet/verify', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
-    const body = request.body as { challengeId?: string; signature?: string };
-    if (!body.challengeId || !body.signature || !/^0x[a-fA-F0-9]{130}$/.test(body.signature)) {
-      return replyValidation(request, 'challengeId and a valid signature are required');
-    }
-    return walletIdentity.verify(actor, body.challengeId, body.signature);
+    const { challengeId, signature } = walletVerifySchema.parse(request.body);
+    return walletIdentity.verify(actor, challengeId, signature);
   });
 
   app.get('/api/bounties', async (request) => {
@@ -106,9 +103,7 @@ export async function registerRoutes(
     const actor = await auth.optionalUser(request.headers.authorization);
     const bounty = await service.get(request.params.id);
     if (bounty.status === 'DRAFT' && bounty.ownerUserId !== actor?.id) {
-      const error = new Error('Bounty not found') as Error & { statusCode: number };
-      error.statusCode = 404;
-      throw error;
+      throw new DomainError('Bounty not found', 404, 'NOT_FOUND');
     }
     return bountyForViewer(bounty, actor?.id);
   });
@@ -127,17 +122,13 @@ export async function registerRoutes(
 
   app.post<{ Params: { id: string } }>('/api/bounties/:id/funded', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
-    const body = request.body as { onchainId?: string; fundingTxHash?: string };
-    if (!body.onchainId || !/^0x[a-fA-F0-9]{64}$/.test(body.fundingTxHash ?? '')) {
-      return replyValidation(request, 'onchainId and a valid fundingTxHash are required');
-    }
-    return service.markFunded(request.params.id, body.onchainId, body.fundingTxHash!, actor.id);
+    const { onchainId, fundingTxHash } = bountyFundedSchema.parse(request.body);
+    return service.markFunded(request.params.id, onchainId, fundingTxHash, actor.id);
   });
 
   app.post<{ Params: { id: string } }>('/api/bounties/:id/refunded', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
-    const body = request.body as { refundTxHash?: string };
-    const refundTxHash = bytes32Schema.parse(body.refundTxHash);
+    const { refundTxHash } = bountyRefundedSchema.parse(request.body);
     return service.markRefunded(request.params.id, refundTxHash, actor);
   });
 
@@ -155,8 +146,7 @@ export async function registerRoutes(
 
   app.post<{ Params: { id: string; applicationId: string } }>('/api/bounties/:id/applications/:applicationId/assign', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
-    const body = request.body as { assignmentTxHash?: string } | undefined;
-    const assignmentTxHash = body?.assignmentTxHash ? bytes32Schema.parse(body.assignmentTxHash) : undefined;
+    const { assignmentTxHash } = bountyAssignSchema.parse(request.body);
     return service.assign(request.params.id, request.params.applicationId, actor, assignmentTxHash);
   });
 
@@ -183,8 +173,8 @@ export async function registerRoutes(
 
   app.post<{ Params: { id: string } }>('/api/bounties/:id/review-payment', async (request, reply) => {
     const actor = await auth.requireUser(request.headers.authorization);
-    const body = request.body as { targetPlan?: 'STANDARD' | 'SECURITY' } | undefined;
-    const order = await service.createReviewPaymentOrder(request.params.id, actor, body?.targetPlan);
+    const { targetPlan } = reviewPaymentRequestSchema.parse(request.body);
+    const order = await service.createReviewPaymentOrder(request.params.id, actor, targetPlan);
     const paymentRequired = order.x402 ?? order;
     return reply
       .header('PAYMENT-REQUIRED', Buffer.from(JSON.stringify(paymentRequired)).toString('base64'))
@@ -194,9 +184,8 @@ export async function registerRoutes(
 
   app.post<{ Params: { id: string } }>('/api/bounties/:id/review-payment/confirm', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
-    const body = request.body as { orderId?: string; txHash?: string };
-    if (!body.orderId || body.orderId.length < 1 || body.orderId.length > 200) return replyValidation(request, 'A valid GOAT Flow orderId is required');
-    const updated = await service.confirmReviewPayment(request.params.id, body.orderId, bytes32Schema.parse(body.txHash) as `0x${string}`, actor);
+    const { orderId, txHash } = confirmReviewPaymentSchema.parse(request.body);
+    const updated = await service.confirmReviewPayment(request.params.id, orderId, txHash as `0x${string}`, actor);
     if (updated.status === 'SUBMITTED' && updated.reviewPaymentStatus === 'PAID') {
       runInBackground(service.runPaidReview(request.params.id).catch((error) => {
         request.log.error(error, 'Automatic upgraded Owl Agent review failed');
@@ -212,9 +201,11 @@ export async function registerRoutes(
 
   app.post<{ Params: { id: string } }>('/api/bounties/:id/verification', async (request) => {
     if (!env.AGENT_API_KEY || request.headers['x-agent-key'] !== env.AGENT_API_KEY) {
-      const error = new Error(!env.AGENT_API_KEY ? 'AGENT_API_KEY is not configured' : 'Agent authorization is required') as Error & { statusCode: number };
-      error.statusCode = 401;
-      throw error;
+      throw new DomainError(
+        !env.AGENT_API_KEY ? 'AGENT_API_KEY is not configured' : 'Agent authorization is required',
+        401,
+        'UNAUTHORIZED'
+      );
     }
     const input = verificationInputSchema.parse(request.body);
     return service.verify(request.params.id, input);
@@ -239,10 +230,4 @@ export async function registerRoutes(
 
 function readGitHubToken(value: string | string[] | undefined) {
   return typeof value === 'string' ? value : '';
-}
-
-function replyValidation(_request: unknown, message: string): never {
-  const error = new Error(message) as Error & { statusCode: number };
-  error.statusCode = 400;
-  throw error;
 }

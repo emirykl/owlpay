@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import { ZodError } from 'zod';
 import { BountyService } from './application/bounty-service.js';
 import { VerificationPolicy } from './application/verification-policy.js';
@@ -59,6 +60,8 @@ export function buildApp(createFastify: typeof Fastify = Fastify) {
       escrowContractAddress: env.OWL_PAY_CONTRACT_ADDRESS as `0x${string}` | ''
     }
   );
+
+  app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
 
   const allowedOrigins = env.FRONTEND_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean);
   app.register(cors, {
