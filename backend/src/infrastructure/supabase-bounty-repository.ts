@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BountyRepository } from '../application/ports.js';
 import type { AgentDecision, Bounty, BountyStatus, BrowserReviewPaymentOrder, Criterion, FlowOrderStatus, ReviewPaymentStatus, ReviewPlan, RevisionRequest, Submission, TimeoutResolution } from '../domain/schemas.js';
+import { DomainError } from '../domain/errors.js';
 
 interface BountyRow {
   id: string;
@@ -59,13 +60,13 @@ export class SupabaseBountyRepository implements BountyRepository {
 
   async list(): Promise<Bounty[]> {
     const { data, error } = await this.client.from('bounties').select('*').order('created_at', { ascending: false });
-    if (error) throw new Error(`Supabase list failed: ${error.message}`);
+    if (error) throw new DomainError(`Supabase list failed: ${error.message}`, 500, 'DATABASE_ERROR');
     return (data as BountyRow[]).map(fromRow);
   }
 
   async get(id: string): Promise<Bounty | undefined> {
     const { data, error } = await this.client.from('bounties').select('*').eq('id', id).maybeSingle();
-    if (error) throw new Error(`Supabase get failed: ${error.message}`);
+    if (error) throw new DomainError(`Supabase get failed: ${error.message}`, 500, 'DATABASE_ERROR');
     return data ? fromRow(data as BountyRow) : undefined;
   }
 
@@ -80,9 +81,9 @@ export class SupabaseBountyRepository implements BountyRepository {
       delete legacyRow.escrow_contract_address;
       const { error: legacyError } = await this.client.from('bounties').upsert(legacyRow, { onConflict: 'id' });
       if (!legacyError) return;
-      throw new Error(`Supabase save failed: ${legacyError.message}`);
+      throw new DomainError(`Supabase save failed: ${legacyError.message}`, 500, 'DATABASE_ERROR');
     }
-    throw new Error(`Supabase save failed: ${error.message}`);
+    throw new DomainError(`Supabase save failed: ${error.message}`, 500, 'DATABASE_ERROR');
   }
 }
 

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ApplicationRepository } from '../application/ports.js';
 import type { ApplicationStatus, BountyApplication } from '../domain/schemas.js';
+import { DomainError } from '../domain/errors.js';
 
 interface ApplicationRow {
   id: string;
@@ -20,32 +21,32 @@ export class SupabaseApplicationRepository implements ApplicationRepository {
 
   async listByBounty(bountyId: string) {
     const { data, error } = await this.client.from('bounty_applications').select('*').eq('bounty_id', bountyId).order('created_at', { ascending: false });
-    if (error) throw new Error(`Supabase application list failed: ${error.message}`);
+    if (error) throw new DomainError(`Supabase application list failed: ${error.message}`, 500, 'DATABASE_ERROR');
     return (data as ApplicationRow[]).map(fromRow);
   }
 
   async listByDeveloper(developerUserId: string) {
     const { data, error } = await this.client.from('bounty_applications').select('*').eq('developer_user_id', developerUserId).order('created_at', { ascending: false });
-    if (error) throw new Error(`Supabase developer application list failed: ${error.message}`);
+    if (error) throw new DomainError(`Supabase developer application list failed: ${error.message}`, 500, 'DATABASE_ERROR');
     return (data as ApplicationRow[]).map(fromRow);
   }
 
   async get(id: string) {
     const { data, error } = await this.client.from('bounty_applications').select('*').eq('id', id).maybeSingle();
-    if (error) throw new Error(`Supabase application get failed: ${error.message}`);
+    if (error) throw new DomainError(`Supabase application get failed: ${error.message}`, 500, 'DATABASE_ERROR');
     return data ? fromRow(data as ApplicationRow) : undefined;
   }
 
   async findByBountyAndDeveloper(bountyId: string, developerUserId: string) {
     const { data, error } = await this.client.from('bounty_applications').select('*').eq('bounty_id', bountyId).eq('developer_user_id', developerUserId).maybeSingle();
-    if (error) throw new Error(`Supabase application lookup failed: ${error.message}`);
+    if (error) throw new DomainError(`Supabase application lookup failed: ${error.message}`, 500, 'DATABASE_ERROR');
     return data ? fromRow(data as ApplicationRow) : undefined;
   }
 
   async countByBounties(bountyIds: string[]) {
     if (bountyIds.length === 0) return {};
     const { data, error } = await this.client.from('bounty_applications').select('bounty_id,status').in('bounty_id', bountyIds).neq('status', 'WITHDRAWN');
-    if (error) throw new Error(`Supabase application count failed: ${error.message}`);
+    if (error) throw new DomainError(`Supabase application count failed: ${error.message}`, 500, 'DATABASE_ERROR');
     const result: Record<string, number> = Object.fromEntries(bountyIds.map((id) => [id, 0]));
     for (const row of data as Pick<ApplicationRow, 'bounty_id' | 'status'>[]) result[row.bounty_id] = (result[row.bounty_id] ?? 0) + 1;
     return result;
@@ -53,26 +54,26 @@ export class SupabaseApplicationRepository implements ApplicationRepository {
 
   async save(application: BountyApplication) {
     const { error } = await this.client.from('bounty_applications').upsert(toRow(application), { onConflict: 'id' });
-    if (error) throw new Error(`Supabase application save failed: ${error.message}`);
+    if (error) throw new DomainError(`Supabase application save failed: ${error.message}`, 500, 'DATABASE_ERROR');
   }
 
   async resolveAssignment(bountyId: string, acceptedApplicationId: string) {
     const updatedAt = new Date().toISOString();
     const rejected = await this.client.from('bounty_applications').update({ status: 'REJECTED', updated_at: updatedAt }).eq('bounty_id', bountyId).neq('id', acceptedApplicationId);
-    if (rejected.error) throw new Error(`Supabase application rejection failed: ${rejected.error.message}`);
+    if (rejected.error) throw new DomainError(`Supabase application rejection failed: ${rejected.error.message}`, 500, 'DATABASE_ERROR');
     const accepted = await this.client.from('bounty_applications').update({ status: 'ACCEPTED', updated_at: updatedAt }).eq('id', acceptedApplicationId).eq('bounty_id', bountyId);
-    if (accepted.error) throw new Error(`Supabase application acceptance failed: ${accepted.error.message}`);
+    if (accepted.error) throw new DomainError(`Supabase application acceptance failed: ${accepted.error.message}`, 500, 'DATABASE_ERROR');
   }
 
   async countActiveByDeveloper(developerUserId: string) {
     const { count, error } = await this.client.from('bounty_applications').select('*', { count: 'exact', head: true }).eq('developer_user_id', developerUserId).in('status', ['PENDING', 'ACCEPTED']);
-    if (error) throw new Error(`Supabase active application count failed: ${error.message}`);
+    if (error) throw new DomainError(`Supabase active application count failed: ${error.message}`, 500, 'DATABASE_ERROR');
     return count ?? 0;
   }
 
   async withdraw(applicationId: string) {
     const { error } = await this.client.from('bounty_applications').update({ status: 'WITHDRAWN', updated_at: new Date().toISOString() }).eq('id', applicationId);
-    if (error) throw new Error(`Supabase application withdrawal failed: ${error.message}`);
+    if (error) throw new DomainError(`Supabase application withdrawal failed: ${error.message}`, 500, 'DATABASE_ERROR');
   }
 }
 

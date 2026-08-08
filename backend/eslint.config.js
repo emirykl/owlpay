@@ -9,7 +9,10 @@ export default tseslint.config(
     files: ['**/*.ts'],
     rules: {
       '@typescript-eslint/consistent-type-imports': 'error',
-      '@typescript-eslint/no-explicit-any': 'warn'
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-console': ['warn', { allow: ['error', 'warn'] }],
+      'prefer-const': 'error'
     }
   }
 );

@@ -26,7 +26,8 @@ export function buildApp(createFastify: typeof Fastify = Fastify) {
   const app = createFastify({
     logger: env.NODE_ENV !== 'test',
     genReqId: () => crypto.randomUUID(),
-    requestIdHeader: 'x-request-id'
+    requestIdHeader: 'x-request-id',
+    bodyLimit: 1_048_576 // 1 MB
   });
   const supabase = env.PERSISTENCE_MODE === 'supabase'
     ? createSupabaseAdminClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY)
@@ -119,20 +120,29 @@ export function buildApp(createFastify: typeof Fastify = Fastify) {
     reply.header('x-request-id', request.id);
   });
 
-  app.setErrorHandler((error, _request, reply) => {
+  app.setNotFoundHandler((_request, reply) => {
+    reply.code(404).send({ code: 'NOT_FOUND', message: 'Route not found' });
+  });
+
+  app.setErrorHandler((error, request, reply) => {
+    const requestId = request.id;
     if (error instanceof ZodError) {
       return reply.code(400).send({
         code: 'VALIDATION_ERROR',
         message: 'Request validation failed',
+        requestId,
         ...(env.NODE_ENV !== 'production' ? { issues: error.issues } : {})
       });
     }
     if (error instanceof DomainError) {
-      return reply.code(error.statusCode).send({ code: error.code, message: error.message });
+      return reply.code(error.statusCode).send({ code: error.code, message: error.message, requestId });
     }
     const normalized = error as Error & { statusCode?: number };
     const statusCode = typeof normalized.statusCode === 'number' ? normalized.statusCode : 500;
-    return reply.code(statusCode).send({ code: 'INTERNAL_ERROR', message: statusCode === 500 ? 'Unexpected server error' : normalized.message });
+    if (statusCode >= 500) {
+      request.log.error(error, 'Unhandled server error');
+    }
+    return reply.code(statusCode).send({ code: 'INTERNAL_ERROR', message: statusCode === 500 ? 'Unexpected server error' : normalized.message, requestId });
   });
 
   return app;
