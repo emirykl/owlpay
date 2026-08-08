@@ -5,5 +5,7 @@ export function runAfterResponse(task: Promise<unknown>) {
     waitUntil(task);
     return;
   }
-  void task;
+  task.catch((error: unknown) => {
+    console.error('[background-task] Unhandled rejection:', error);
+  });
 }

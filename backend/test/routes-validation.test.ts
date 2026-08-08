@@ -138,4 +138,47 @@ describe('error handler', () => {
     expect(response.statusCode).toBe(401);
     expect(response.json()).toMatchObject({ code: 'UNAUTHORIZED' });
   });
+
+  it('includes requestId in validation error responses', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/wallet/challenge',
+      payload: { address: 'bad' }
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json();
+    expect(body.code).toBe('VALIDATION_ERROR');
+    expect(body.requestId).toBeDefined();
+    expect(typeof body.requestId).toBe('string');
+  });
+
+  it('includes requestId in domain error responses', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/bounties/test-id/verification',
+      payload: { confidence: 0.9, criterionResults: [], blockingIssues: [] },
+      headers: { 'x-agent-key': 'wrong-key' }
+    });
+    const body = response.json();
+    expect(body.requestId).toBeDefined();
+    expect(typeof body.requestId).toBe('string');
+  });
+});
+
+describe('not found handler', () => {
+  it('returns structured 404 for undefined routes', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/nonexistent' });
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ code: 'NOT_FOUND', message: 'Route not found' });
+  });
+
+  it('returns 404 for undefined POST routes', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/does-not-exist',
+      payload: {}
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ code: 'NOT_FOUND' });
+  });
 });
