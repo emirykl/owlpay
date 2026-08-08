@@ -44,7 +44,7 @@ export function AuthCallbackScreen({ callbackError }: { callbackError?: string }
           <motion.div className="callbackCopy" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <span className="eyebrow">Connection paused</span>
             <h1>GitHub could not be connected.</h1>
-            <p>{callbackError?.replaceAll('+', ' ') ?? 'The authorization took longer than expected. Return to the workspace and try once more.'}</p>
+            <p>{callbackError ? decodeURIComponent(callbackError) : 'The authorization took longer than expected. Return to the workspace and try once more.'}</p>
             <Link className="primaryButton callbackAction" href="/app">Return to workspace</Link>
           </motion.div>
         ) : (

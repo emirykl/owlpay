@@ -40,7 +40,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(data.session?.user ?? null);
       setLoading(false);
       resumeOAuthReturn(data.session?.user ?? null);
-    }).catch(() => setLoading(false));
+    }).catch((err) => {
+      console.warn('Failed to restore auth session:', err);
+      setLoading(false);
+    });
     const { data } = client.auth.onAuthStateChange((event, session) => {
       rememberGitHubProviderToken(session?.provider_token);
       if (event === 'SIGNED_OUT') clearGitHubProviderToken();

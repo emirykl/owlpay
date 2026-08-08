@@ -5,6 +5,7 @@ export class DomainError extends Error {
     readonly code = 'DOMAIN_ERROR'
   ) {
     super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 
