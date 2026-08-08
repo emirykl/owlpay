@@ -4,6 +4,9 @@ dist/
 coverage/
 .env
 .env.local
+.env.*.local
+.env.production.local
+.vercel/
 artifacts/
 cache/
 *.log

@@ -67,12 +67,14 @@ export function buildApp(createFastify: typeof Fastify = Fastify) {
       if (!origin) return callback(null, true);
       // Check exact match against configured origins
       if (allowedOrigins.includes(origin)) return callback(null, true);
-      // Allow Vercel preview deployment URLs for configured domains
+      // Allow Vercel preview deployment URLs matching configured project prefixes
       if (allowedOrigins.some((allowed) => {
         try {
           const host = new URL(allowed).hostname;
-          // Match *.vercel.app preview URLs for the same Vercel team
-          if (host.endsWith('.vercel.app') && origin.endsWith('.vercel.app')) return true;
+          if (!host.endsWith('.vercel.app')) return false;
+          const projectPrefix = host.replace('.vercel.app', '');
+          const originHost = new URL(origin).hostname;
+          return originHost.endsWith('.vercel.app') && originHost.includes(projectPrefix);
         } catch { /* ignore */ }
         return false;
       })) return callback(null, true);
@@ -108,7 +110,11 @@ export function buildApp(createFastify: typeof Fastify = Fastify) {
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ZodError) {
-      return reply.code(400).send({ code: 'VALIDATION_ERROR', message: 'Request validation failed', issues: error.issues });
+      return reply.code(400).send({
+        code: 'VALIDATION_ERROR',
+        message: 'Request validation failed',
+        ...(env.NODE_ENV !== 'production' ? { issues: error.issues } : {})
+      });
     }
     if (error instanceof DomainError) {
       return reply.code(error.statusCode).send({ code: error.code, message: error.message });

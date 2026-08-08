@@ -38,7 +38,7 @@ const viewTitles: Record<WorkspaceView, string> = {
 function repositoryMeta(repositoryUrl: string) {
   try {
     const [, owner = 'github', repository = 'repository'] = new URL(repositoryUrl).pathname.split('/');
-    return { owner, fullName: `${owner}/${repository}`, avatarUrl: `https://github.com/${owner}.png?size=96` };
+    return { owner, fullName: `${owner}/${repository}`, avatarUrl: `https://github.com/${encodeURIComponent(owner)}.png?size=96` };
   } catch {
     return { owner: 'github', fullName: repositoryUrl, avatarUrl: 'https://github.com/github.png?size=96' };
   }

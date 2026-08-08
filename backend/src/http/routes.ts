@@ -2,9 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import type { BountyService } from '../application/bounty-service.js';
 import type { AuthVerifier } from '../application/auth.js';
 import type { WalletIdentity } from '../application/wallet-identity.js';
-import { addressSchema, bytes32Schema } from '../domain/schemas.js';
+import { addressSchema, appealResolutionSchema, bytes32Schema, createApplicationSchema, createBountySchema, requestRevisionSchema, submitWorkSchema, verificationInputSchema } from '../domain/schemas.js';
 import { env } from '../config/env.js';
-import { appealResolutionSchema, createApplicationSchema, createBountySchema, requestRevisionSchema, submitWorkSchema, verificationInputSchema } from '../domain/schemas.js';
 import { getNetworkStatus } from '../infrastructure/goat-client.js';
 import { bountyForViewer } from '../application/bounty-visibility.js';
 
@@ -49,7 +48,7 @@ export async function registerRoutes(
 
   app.get('/api/cron/resolve-due', async (request, reply) => {
     if (!env.CRON_SECRET || request.headers.authorization !== `Bearer ${env.CRON_SECRET}`) {
-      return reply.code(401).send({ code: 'UNAUTHORIZED', message: 'Cron authorization is required' });
+      return reply.code(401).send({ code: 'UNAUTHORIZED', message: !env.CRON_SECRET ? 'CRON_SECRET is not configured' : 'Cron authorization is required' });
     }
     const items = await service.resolveDueBounties();
     return { ok: true, processed: items.length, items };
@@ -196,7 +195,7 @@ export async function registerRoutes(
   app.post<{ Params: { id: string } }>('/api/bounties/:id/review-payment/confirm', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
     const body = request.body as { orderId?: string; txHash?: string };
-    if (!body.orderId || body.orderId.length > 200) return replyValidation(request, 'A valid GOAT Flow orderId is required');
+    if (!body.orderId || body.orderId.length < 1 || body.orderId.length > 200) return replyValidation(request, 'A valid GOAT Flow orderId is required');
     const updated = await service.confirmReviewPayment(request.params.id, body.orderId, bytes32Schema.parse(body.txHash) as `0x${string}`, actor);
     if (updated.status === 'SUBMITTED' && updated.reviewPaymentStatus === 'PAID') {
       runInBackground(service.runPaidReview(request.params.id).catch((error) => {
@@ -212,8 +211,8 @@ export async function registerRoutes(
   });
 
   app.post<{ Params: { id: string } }>('/api/bounties/:id/verification', async (request) => {
-    if (env.AGENT_API_KEY && request.headers['x-agent-key'] !== env.AGENT_API_KEY) {
-      const error = new Error('Agent authorization is required') as Error & { statusCode: number };
+    if (!env.AGENT_API_KEY || request.headers['x-agent-key'] !== env.AGENT_API_KEY) {
+      const error = new Error(!env.AGENT_API_KEY ? 'AGENT_API_KEY is not configured' : 'Agent authorization is required') as Error & { statusCode: number };
       error.statusCode = 401;
       throw error;
     }

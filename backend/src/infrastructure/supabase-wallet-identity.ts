@@ -19,7 +19,10 @@ export class SupabaseWalletIdentity implements WalletIdentity {
 
   async getStatus(user: AuthUser): Promise<WalletStatus> {
     const { data, error } = await this.client.from('profiles').select('wallet_address,wallet_verified_at').eq('id', user.id).single();
-    if (error) throw new Error(`Supabase profile lookup failed: ${error.message}`);
+    if (error) {
+      console.error('Supabase profile lookup failed:', error.message);
+      throw new DomainError('Unable to retrieve wallet status', 500, 'INTERNAL_ERROR');
+    }
     return { walletAddress: data.wallet_address as string | null, verified: Boolean(data.wallet_verified_at) };
   }
 
@@ -44,13 +47,19 @@ export class SupabaseWalletIdentity implements WalletIdentity {
       message,
       expires_at: expiresAt
     });
-    if (error) throw new Error(`Supabase challenge creation failed: ${error.message}`);
+    if (error) {
+      console.error('Supabase challenge creation failed:', error.message);
+      throw new DomainError('Unable to create wallet challenge', 500, 'INTERNAL_ERROR');
+    }
     return { challengeId, message, expiresAt };
   }
 
   async verify(user: AuthUser, challengeId: string, signature: string): Promise<WalletStatus> {
     const { data, error } = await this.client.from('wallet_challenges').select('*').eq('id', challengeId).eq('user_id', user.id).maybeSingle();
-    if (error) throw new Error(`Supabase challenge lookup failed: ${error.message}`);
+    if (error) {
+      console.error('Supabase challenge lookup failed:', error.message);
+      throw new DomainError('Unable to verify wallet challenge', 500, 'INTERNAL_ERROR');
+    }
     if (!data) throw new DomainError('Wallet challenge not found', 404, 'CHALLENGE_NOT_FOUND');
     const challenge = data as ChallengeRow;
     if (challenge.consumed_at || new Date(challenge.expires_at).getTime() <= Date.now()) {
@@ -71,7 +80,10 @@ export class SupabaseWalletIdentity implements WalletIdentity {
       .is('consumed_at', null)
       .select('id')
       .maybeSingle();
-    if (consumeError) throw new Error(`Supabase challenge update failed: ${consumeError.message}`);
+    if (consumeError) {
+      console.error('Supabase challenge update failed:', consumeError.message);
+      throw new DomainError('Unable to complete wallet verification', 500, 'INTERNAL_ERROR');
+    }
     if (!consumed) throw new DomainError('Wallet challenge was already used', 400, 'CHALLENGE_EXPIRED');
 
     const { error: profileError } = await this.client.from('profiles').update({
@@ -81,7 +93,8 @@ export class SupabaseWalletIdentity implements WalletIdentity {
     }).eq('id', user.id);
     if (profileError) {
       if (profileError.code === '23505') throw new DomainError('This wallet is already linked to another GitHub account', 409, 'WALLET_IN_USE');
-      throw new Error(`Supabase wallet update failed: ${profileError.message}`);
+      console.error('Supabase wallet update failed:', profileError.message);
+      throw new DomainError('Unable to link wallet', 500, 'INTERNAL_ERROR');
     }
     return { walletAddress: challenge.wallet_address, verified: true };
   }

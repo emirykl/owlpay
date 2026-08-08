@@ -1,30 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { goatTestnet } from '@/lib/network';
 import { useWallet } from './wallet-provider';
 import { MetaMaskMark } from './icons';
+import { useClickOutside } from '@/hooks/use-click-outside';
 
 export function WalletButton() {
   const { address, chainId, connect, disconnect, switchToGoat, isConnecting, error } = useWallet();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const closeOnOutsideClick = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMenuOpen(false);
-    };
-    document.addEventListener('mousedown', closeOnOutsideClick);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('mousedown', closeOnOutsideClick);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [menuOpen]);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  useClickOutside(menuRef, menuOpen, closeMenu);
 
   if (address && chainId !== goatTestnet.id) {
     return <button className="walletButton warning providerButton" onClick={switchToGoat}><span className="providerMark metamaskMark"><MetaMaskMark /></span>Switch network</button>;
