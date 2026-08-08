@@ -19,7 +19,7 @@ const github: GitHubEvidenceProvider = {
     return { id: 1, name: 'demo', fullName: 'owlpay/demo', url: repositoryUrl, ownerLogin: 'owlpay', ownerAvatarUrl: null, permission: 'admin' };
   },
   async getPullRequest(pullRequestUrl) {
-    return { repositoryUrl: 'https://github.com/owlpay/demo', pullRequestUrl, number: 42, state: 'open', headSha: 'a'.repeat(40), changedFiles: 2, additions: 30, deletions: 4, authorId: 202, author: 'developer-two', title: 'Complete bounty', body: 'Implements the requested criteria.' };
+    return { repositoryUrl: 'https://github.com/owlpay/demo', pullRequestUrl, number: 42, state: 'open', merged: false, headSha: 'a'.repeat(40), changedFiles: 2, additions: 30, deletions: 4, authorId: 202, author: 'developer-two', title: 'Complete bounty', body: 'Implements the requested criteria.' };
   },
   async reviewPullRequest() {
     return { confidence: 0.94, criterionResults: [{ criterionId: 'health', status: 'PASSED' as const, evidence: ['CI passed'], summary: 'Endpoint and tests pass.' }], blockingIssues: [] };
@@ -29,7 +29,9 @@ const github: GitHubEvidenceProvider = {
 const settlement: SettlementGateway = {
   writesEnabled: true,
   async approveAndRelease() { return `0x${'9'.repeat(64)}`; },
-  async requestRevision() { return `0x${'8'.repeat(64)}`; }
+  async requestRevision() { return `0x${'8'.repeat(64)}`; },
+  async approveAfterTimeout() { return `0x${'7'.repeat(64)}`; },
+  async refundAfterTimeout() { return `0x${'6'.repeat(64)}`; }
 };
 
 const paymentToken = '0x0000000000000000000000000000000000000010' as const;
@@ -119,7 +121,7 @@ const reviewConfig = {
 };
 
 describe('bounty application and assignment flow', () => {
-  it('allows a free manual bounty to be approved without an agent payment or report', async () => {
+  it('stores maintainer feedback across a manual revision cycle before approval', async () => {
     const payment = createPaymentHarness();
     const service = new BountyService(
       new InMemoryBountyRepository(),
@@ -129,7 +131,8 @@ describe('bounty application and assignment flow', () => {
       settlement,
       payment.gateway,
       payment.verifier,
-      reviewConfig
+      reviewConfig,
+      { escrowContractAddress: '0x00000000000000000000000000000000000000aa' }
     );
     const draft = await service.create({
       title: 'Manually review this pull request',
@@ -142,7 +145,12 @@ describe('bounty application and assignment flow', () => {
       criteria: [{ id: 'manual', description: 'Maintainer accepts the implementation', mandatory: true, method: 'manual' }]
     }, owner, 'github-token');
 
-    expect(draft).toMatchObject({ reviewPlan: 'NONE', reviewPrice: '0', reviewPaymentStatus: 'NOT_REQUIRED' });
+    expect(draft).toMatchObject({
+      reviewPlan: 'NONE',
+      reviewPrice: '0',
+      reviewPaymentStatus: 'NOT_REQUIRED',
+      escrowContractAddress: '0x00000000000000000000000000000000000000aa'
+    });
     const optionalStandard = await service.createReviewPaymentOrder(draft.id, owner, 'STANDARD');
     expect(optionalStandard.amountWei).toBe('2000000');
     await service.markFunded(draft.id, '7', `0x${'1'.repeat(64)}`, owner.id);
@@ -158,6 +166,22 @@ describe('bounty application and assignment flow', () => {
 
     expect(submitted.bounty.status).toBe('SUBMITTED');
     expect(submitted.bounty.decision).toBeUndefined();
+    const revision = await service.requestRevision(draft.id, owner, {
+      message: 'Add coverage for the error response and update the API documentation.'
+    });
+    expect(revision).toMatchObject({
+      status: 'REVISION_REQUIRED',
+      revisionRequests: [{
+        message: 'Add coverage for the error response and update the API documentation.',
+        commitSha: 'a'.repeat(40),
+        requestedByGithubLogin: 'maintainer'
+      }]
+    });
+    const resubmitted = await service.submit(draft.id, {
+      pullRequestUrl: 'https://github.com/owlpay/demo/pull/42',
+      developerAddress: application.developerAddress
+    }, developers[1]!);
+    expect(resubmitted.bounty).toMatchObject({ status: 'SUBMITTED', revisionRequests: revision.revisionRequests });
     expect(await service.approve(draft.id, owner)).toMatchObject({ status: 'PAID', payoutTxHash: `0x${'9'.repeat(64)}` });
   });
 
@@ -271,12 +295,76 @@ describe('bounty application and assignment flow', () => {
     expect(assigned).toMatchObject({ status: 'ASSIGNED', assignedDeveloperUserId: developers[1]!.id });
     await expect(service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: applications[0]!.developerAddress }, developers[0]!)).rejects.toMatchObject({ code: 'DEVELOPER_NOT_ASSIGNED' });
 
-    await service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: applications[1]!.developerAddress }, developers[1]!);
+    const submitted = await service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: applications[1]!.developerAddress }, developers[1]!);
+    expect(submitted.bounty.submission).toMatchObject({ author: 'developer-two', changedFiles: 2, additions: 30, deletions: 4 });
+    await expect(service.getSubmissionReportEvidence(draft.id, developers[1]!)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(await service.getSubmissionReportEvidence(draft.id, owner)).toEqual({ author: 'developer-two', changedFiles: 2, additions: 30, deletions: 4 });
     await service.confirmReviewPayment(draft.id, paymentOrder.orderId, `0x${'7'.repeat(64)}`, owner);
     expect((await service.get(draft.id)).reviewPaymentStatus).toBe('PAID');
     const reviewed = await service.verify(draft.id, { confidence: 0.94, criterionResults: [{ criterionId: 'health', status: 'PASSED', evidence: ['CI passed'], summary: 'Endpoint and tests pass.' }], blockingIssues: [] });
     expect(reviewed).toMatchObject({ status: 'READY_FOR_REVIEW', decision: { decision: 'APPROVE' } });
     await expect(service.approve(draft.id, developers[1]!)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await service.requestRevision(draft.id, owner, { message: 'Update the pull request with one additional regression test.' });
+    const revisedSubmission = await service.submit(draft.id, {
+      pullRequestUrl: 'https://github.com/owlpay/demo/pull/42',
+      developerAddress: applications[1]!.developerAddress
+    }, developers[1]!);
+    expect(revisedSubmission.bounty.status).toBe('SUBMITTED');
+    expect(revisedSubmission.bounty.decision).toBeUndefined();
     expect(await service.approve(draft.id, owner)).toMatchObject({ status: 'PAID', payoutTxHash: `0x${'9'.repeat(64)}` });
+  });
+
+  it('automatically pays a qualifying submission only after the fixed maintainer window ends', async () => {
+    const repository = new InMemoryBountyRepository();
+    const service = new BountyService(repository, new InMemoryApplicationRepository(), github, new VerificationPolicy(), settlement);
+    const deadline = new Date(Date.now() + 86_400_000).toISOString();
+    const draft = await service.create({
+      title: 'Resolve an unanswered review',
+      description: 'The Owl AI fallback resolves qualifying work after maintainer inactivity.',
+      repositoryUrl: 'https://github.com/owlpay/demo',
+      ownerAddress: '0x0000000000000000000000000000000000000001',
+      rewardAmount: '20', reviewPlan: 'NONE', deadline,
+      criteria: [{ id: 'health', description: 'GET /health returns HTTP 200', mandatory: true, method: 'ci' }]
+    }, owner, 'github-token');
+    await service.markFunded(draft.id, '1', `0x${'1'.repeat(64)}`, owner.id);
+    const application = await service.apply(draft.id, {
+      message: 'I can complete this bounty with tests and supporting evidence.',
+      developerAddress: '0x0000000000000000000000000000000000000003'
+    }, developers[1]!);
+    await service.assign(draft.id, application.id, owner);
+    await service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: application.developerAddress }, developers[1]!);
+
+    expect(await service.resolveDueBounties(new Date(deadline).getTime() + 6 * 86_400_000)).toEqual([]);
+    await service.resolveDueBounties(new Date(deadline).getTime() + 7 * 86_400_000 + 1);
+    expect(await service.get(draft.id)).toMatchObject({ status: 'PAID', timeoutResolution: 'AUTO_APPROVED', payoutTxHash: `0x${'7'.repeat(64)}` });
+  });
+
+  it('holds a low-confidence timeout decision for appeal instead of refunding immediately', async () => {
+    const lowConfidenceGithub: GitHubEvidenceProvider = {
+      ...github,
+      async reviewPullRequest() {
+        return { confidence: 0.4, criterionResults: [{ criterionId: 'health', status: 'UNKNOWN' as const, evidence: [], summary: 'No successful CI run.' }], blockingIssues: [] };
+      }
+    };
+    const service = new BountyService(new InMemoryBountyRepository(), new InMemoryApplicationRepository(), lowConfidenceGithub, new VerificationPolicy(), settlement);
+    const deadline = new Date(Date.now() + 86_400_000).toISOString();
+    const draft = await service.create({
+      title: 'Appeal an uncertain review',
+      description: 'Low confidence work remains escrowed during the contributor appeal window.',
+      repositoryUrl: 'https://github.com/owlpay/demo',
+      ownerAddress: '0x0000000000000000000000000000000000000001',
+      rewardAmount: '20', reviewPlan: 'NONE', deadline,
+      criteria: [{ id: 'health', description: 'GET /health returns HTTP 200', mandatory: true, method: 'ci' }]
+    }, owner, 'github-token');
+    await service.markFunded(draft.id, '1', `0x${'1'.repeat(64)}`, owner.id);
+    const application = await service.apply(draft.id, {
+      message: 'I can complete this bounty with tests and supporting evidence.',
+      developerAddress: '0x0000000000000000000000000000000000000003'
+    }, developers[1]!);
+    await service.assign(draft.id, application.id, owner);
+    await service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: application.developerAddress }, developers[1]!);
+    await service.resolveDueBounties(new Date(deadline).getTime() + 7 * 86_400_000 + 1);
+    expect(await service.get(draft.id)).toMatchObject({ status: 'HUMAN_REVIEW', timeoutResolution: 'AUTO_FAILED_PENDING' });
+    expect(await service.appealTimeoutResolution(draft.id, developers[1]!, 'The CI evidence is now available and should be reviewed again.')).toMatchObject({ timeoutResolution: 'DISPUTED' });
   });
 });

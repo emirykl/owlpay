@@ -6,7 +6,7 @@ import { useMemo, useRef, useState, type FormEvent } from 'react';
 import { encodeFunctionData, formatUnits, keccak256, parseUnits, stringToHex } from 'viem';
 import { owlpayApi } from '@/lib/api';
 import { useWallet } from './wallet-provider';
-import { contractAddress, contractsReady, erc20Abi, owlPayAbi, paymentTokenAddress } from '@/lib/contracts';
+import { contractAddress, erc20Abi, owlPayAbi, paymentTokenAddress } from '@/lib/contracts';
 import { goatPublicClient } from '@/lib/network';
 import { useAuth } from './auth-provider';
 import { Check, GitHubMark, LinkMark, MetaMaskMark } from './icons';
@@ -37,7 +37,8 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [deadline, setDeadline] = useState(defaultDeadline);
-  const [criterion, setCriterion] = useState('Existing tests must pass');
+  const [criterion, setCriterion] = useState('The pull request fulfills the requested bounty changes');
+  const [requireCi, setRequireCi] = useState(false);
   const [rewardAmount, setRewardAmount] = useState('20');
   const [reviewPlan, setReviewPlan] = useState<'NONE' | 'STANDARD' | 'SECURITY'>('STANDARD');
   const [deadlineBounds] = useState(() => ({
@@ -67,15 +68,24 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
   const network = useQuery({ queryKey: ['network'], queryFn: owlpayApi.network, retry: false });
   const reviewToken = network.data?.reviewPaymentToken;
   const reviewTokenAddress = reviewToken?.address;
+  const rewardToken = network.data?.paymentToken;
+  const rewardTokenAddress = rewardToken?.address ?? paymentTokenAddress;
+  const rewardTokenSymbol = rewardToken?.symbol ?? 'USDC';
+  const rewardTokenDecimals = rewardToken?.decimals ?? 6;
+  const activeContractAddress = network.data?.contractAddress ?? contractAddress;
+  const contractsReady = Boolean(
+    activeContractAddress && /^0x[a-fA-F0-9]{40}$/.test(activeContractAddress)
+    && rewardTokenAddress && /^0x[a-fA-F0-9]{40}$/.test(rewardTokenAddress)
+  );
   const identityLinked = Boolean(address)
     && identity.data?.wallet.verified
     && identity.data.wallet.walletAddress?.toLowerCase() === address?.toLowerCase();
   const tokenBalance = useQuery({
-    queryKey: ['payment-token-balance', address],
+    queryKey: ['payment-token-balance', rewardTokenAddress, address],
     queryFn: async () => goatPublicClient.readContract({
-      address: paymentTokenAddress!, abi: erc20Abi, functionName: 'balanceOf', args: [address!]
+      address: rewardTokenAddress as `0x${string}`, abi: erc20Abi, functionName: 'balanceOf', args: [address!]
     }),
-    enabled: Boolean(address && paymentTokenAddress && contractsReady),
+    enabled: Boolean(address && rewardTokenAddress && contractsReady),
     retry: false
   });
   const reviewTokenBalance = useQuery({
@@ -89,18 +99,6 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
     enabled: Boolean(address && reviewTokenAddress && reviewPlan !== 'NONE'),
     retry: false
   });
-  const claimMutation = useMutation({
-    mutationFn: async () => {
-      if (!paymentTokenAddress) throw new Error('Test token is not configured.');
-      const hash = await sendTransaction({
-        to: paymentTokenAddress,
-        data: encodeFunctionData({ abi: erc20Abi, functionName: 'claim' })
-      });
-      await goatPublicClient.waitForTransactionReceipt({ hash });
-    },
-    onSuccess: () => tokenBalance.refetch()
-  });
-
   const selectedRepository = repositories.data?.items.find((repository) => repository.url === repositoryUrl);
   const repositoryFullName = selectedRepository?.fullName ?? repositoryUrl.replace(/^https:\/\/github\.com\//, '').replace(/\/$/, '');
   const repositoryOwner = selectedRepository?.ownerLogin ?? repositoryFullName.split('/')[0] ?? 'GitHub';
@@ -121,17 +119,20 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
         rewardAmount,
         reviewPlan,
         deadline: new Date(deadline).toISOString(),
-        criteria: [{ id: crypto.randomUUID(), description: criterion, mandatory: true, method: 'ci' as const }]
+        criteria: [
+          { id: crypto.randomUUID(), description: criterion, mandatory: true, method: 'github' as const },
+          ...(requireCi ? [{ id: crypto.randomUUID(), description: 'Configured GitHub checks must pass', mandatory: true, method: 'ci' as const }] : [])
+        ]
       };
       const draft = creationProgress.current.draft ?? await owlpayApi.createBounty(input);
       creationProgress.current.draft = draft;
-      if (!contractsReady || !contractAddress || !paymentTokenAddress) return draft;
+      if (!contractsReady || !activeContractAddress || !rewardTokenAddress) return draft;
       if (creationProgress.current.funded?.reviewPaymentStatus === 'PAID' || reviewPlan === 'NONE') {
         if (creationProgress.current.funded) return creationProgress.current.funded;
       }
-      const bountyContract = contractAddress;
-      const paymentToken = paymentTokenAddress;
-      const reward = parseUnits(input.rewardAmount, 6);
+      const bountyContract = (draft.escrowContractAddress ?? activeContractAddress) as `0x${string}`;
+      const paymentToken = rewardTokenAddress as `0x${string}`;
+      const reward = parseUnits(input.rewardAmount, rewardTokenDecimals);
       let funded = creationProgress.current.funded;
       if (!funded) {
         const taskHash = keccak256(stringToHex(JSON.stringify({ title, description, repositoryUrl, criteria: input.criteria })));
@@ -187,9 +188,9 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
       : network.data?.reviewPrices.standard ?? 1);
   const reviewTokenSymbol = reviewToken?.symbol ?? 'USDC';
   const reviewTokenDecimals = reviewToken?.decimals ?? 6;
-  const rewardUnits = /^\d+(\.\d{0,6})?$/.test(rewardAmount) ? parseUnits(rewardAmount || '0', 6) : BigInt(0);
+  const rewardUnits = /^\d+(\.\d{0,6})?$/.test(rewardAmount) ? parseUnits(rewardAmount || '0', rewardTokenDecimals) : BigInt(0);
   const reviewUnits = parseUnits(String(reviewPrice), reviewTokenDecimals);
-  const samePaymentToken = Boolean(reviewTokenAddress && paymentTokenAddress && reviewTokenAddress.toLowerCase() === paymentTokenAddress.toLowerCase() && reviewTokenDecimals === 6);
+  const samePaymentToken = Boolean(reviewTokenAddress && rewardTokenAddress && reviewTokenAddress.toLowerCase() === rewardTokenAddress.toLowerCase() && reviewTokenDecimals === rewardTokenDecimals);
   const rewardUnitsNeeded = samePaymentToken ? rewardUnits + reviewUnits : rewardUnits;
   const hasEnoughRewardBalance = !contractsReady || tokenBalance.data === undefined || tokenBalance.data >= rewardUnitsNeeded;
   const hasEnoughReviewBalance = reviewPlan === 'NONE'
@@ -210,7 +211,6 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
   const visibleBalancesChecking = tokenBalance.data === undefined
     || Boolean(showSeparateReviewBalance && reviewTokenAddress && reviewTokenBalance.data === undefined);
   const balanceSummaryState = visibleBalancesChecking ? 'checking' : visibleBalancesCovered ? 'covered' : 'attention';
-  const claimErrorMessage = getTransactionErrorMessage(claimMutation.error, 'The token claim could not be completed. Please try again.');
   const creationErrorMessage = getTransactionErrorMessage(mutation.error, 'The funding transaction could not be completed. Please try again.');
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -297,7 +297,11 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
                   <div className="stepCopy"><h3>Reward & review</h3></div>
                   <div className="wizardFieldGrid">
                     <label className="wizardField full"><span>Mandatory acceptance criterion</span><input value={criterion} onChange={(event) => setCriterion(event.target.value)} required minLength={3} autoFocus /></label>
-                    <label className="wizardField full"><span>Reward · otUSDC</span><input value={rewardAmount} onChange={(event) => setRewardAmount(event.target.value)} inputMode="decimal" pattern="\d+(\.\d{1,6})?" required /></label>
+                    <label className={`ciRequirementToggle full ${requireCi ? 'enabled' : ''}`}>
+                      <input type="checkbox" checked={requireCi} onChange={(event) => setRequireCi(event.target.checked)} />
+                      <span><strong>Require GitHub CI checks</strong><small>Enable only when this repository has GitHub Actions or another configured check suite that must pass.</small></span>
+                    </label>
+                    <label className="wizardField full"><span>Reward · {rewardTokenSymbol}</span><input value={rewardAmount} onChange={(event) => setRewardAmount(event.target.value)} inputMode="decimal" pattern="\d+(\.\d{1,6})?" required /></label>
                     <div className="wizardField full">
                       <span>Review method</span>
                       <div className="reviewPlanChoices" role="radiogroup" aria-label="Review method">
@@ -311,7 +315,7 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
                         />
                         <ReviewPlanChoice
                           checked={reviewPlan === 'STANDARD'}
-                          description="Checks the required criterion, pull-request evidence, and GitHub CI results. Paid once while funding the bounty."
+                          description="Checks the bounty requirements and pull-request evidence, plus CI only when you require it. Paid once while funding the bounty."
                           label="Standard"
                           price={`${network.data?.reviewPrices.standard ?? '1'} ${reviewTokenSymbol}`}
                           value="STANDARD"
@@ -339,8 +343,9 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
                       <span className="reviewRepositoryAvatar" style={repositoryAvatarUrl ? { backgroundImage: `url(${repositoryAvatarUrl})` } : undefined}>{repositoryAvatarUrl ? '' : repositoryOwner.slice(0, 1).toUpperCase()}</span>
                       <div className="reviewMainCopy"><span>{repositoryFullName}</span><h3>{title}</h3><p>{description}</p></div>
                     </div>
-                    <div className="reviewGrid"><div><span>Escrow reward</span><strong>{rewardAmount} otUSDC</strong></div><div><span>Review method</span><strong>{reviewPlan === 'NONE' ? 'Manual · Free' : `${reviewPlan === 'SECURITY' ? 'Security' : 'Standard'} · ${reviewPrice.toFixed(2)} ${reviewTokenSymbol} paid now`}</strong></div><div><span>Deadline</span><strong>{new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(deadline))}</strong></div></div>
+                    <div className="reviewGrid"><div><span>Escrow reward</span><strong>{rewardAmount} {rewardTokenSymbol}</strong></div><div><span>Review method</span><strong>{reviewPlan === 'NONE' ? 'Manual · Free' : `${reviewPlan === 'SECURITY' ? 'Security' : 'Standard'} · ${reviewPrice.toFixed(2)} ${reviewTokenSymbol} paid now`}</strong></div><div><span>Deadline</span><strong>{new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(deadline))}</strong></div></div>
                     <div className="reviewCriterion"><span><Check /></span><p><strong>Mandatory evidence</strong><small>{criterion}</small></p></div>
+                    {requireCi && <div className="reviewCriterion ciReviewCriterion"><span><Check /></span><p><strong>CI required</strong><small>Configured GitHub checks must pass.</small></p></div>}
                   </div>
                   {!address && <div className="connectionGate walletGate providerGate"><span className="connectionProviderIcon metamaskConnectionIcon"><MetaMaskMark /></span><div><strong>Connect MetaMask to fund</strong><p>Your connected address becomes the bounty owner on GOAT Testnet3.</p></div><WalletButton /></div>}
                   {address && authConfigured && !identityLinked && <div className="connectionGate walletGate providerGate"><span className="connectionProviderIcon linkConnectionIcon"><LinkMark /></span><div><strong>Link GitHub and wallet</strong><p>Sign one verification message so OwlPay can bind this bounty to your identity.</p></div><IdentityButton /></div>}
@@ -348,39 +353,41 @@ export function CreateBounty({ onClose }: { onClose: () => void }) {
                   {address && contractsReady && (
                     <section className={`balanceSummary ${balanceSummaryState}`} aria-labelledby="balance-summary-title">
                       <header className="balanceSummaryHeader">
-                        <div><span>Payment readiness</span><h4 id="balance-summary-title">Balances</h4></div>
+                        <div><span>Cost breakdown</span><h4 id="balance-summary-title">Total</h4></div>
                         <span className={`balanceSummaryStatus ${balanceSummaryState}`}>
-                          {visibleBalancesChecking ? 'Checking balances' : visibleBalancesCovered ? 'All balances covered' : 'Action needed'}
+                          {visibleBalancesChecking ? 'Checking balance' : visibleBalancesCovered ? 'Balance sufficient' : 'Insufficient balance'}
                         </span>
                       </header>
                       <div className="balanceSummaryRows">
                         <div className="balanceSummaryRow">
-                          <span className={`balanceCheckBadge ${tokenBalance.data === undefined ? 'checking' : rewardBalanceCovered ? 'covered' : 'insufficient'}`} role="img" aria-label={tokenBalance.data === undefined ? 'Escrow balance is being checked' : rewardBalanceCovered ? 'Escrow balance is covered' : 'Escrow balance is insufficient'}>
-                            {rewardBalanceCovered ? <Check /> : tokenBalance.data === undefined ? '…' : '!'}
-                          </span>
+                          <span className={`balanceCheckBadge covered`} role="img" aria-label="Escrow cost"><Check /></span>
                           <div className="balanceSummaryCopy">
-                            <span>Escrow balance</span>
-                            <strong>{tokenBalance.data === undefined ? 'Loading…' : `${formatUnits(tokenBalance.data, 6)} otUSDC`}</strong>
-                            <small><b>{formatUnits(rewardUnitsNeeded, 6)} otUSDC required</b> for escrow{samePaymentToken && reviewPrice > 0 ? ' and AI review' : ''}.</small>
+                            <span>Escrow reward</span>
+                            <strong>{rewardAmount} {rewardTokenSymbol}</strong>
                           </div>
-                          {!hasEnoughRewardBalance && <div className="balanceRowActions"><button type="button" className="secondaryButton" onClick={() => claimMutation.mutate()} disabled={claimMutation.isPending}>{claimMutation.isPending ? 'Claiming…' : 'Claim 1,000 otUSDC'}</button></div>}
                         </div>
-                        {showSeparateReviewBalance && (
+                        {reviewPlan !== 'NONE' && (
                           <div className="balanceSummaryRow">
-                            <span className={`balanceCheckBadge ${!reviewTokenAddress ? 'insufficient' : reviewTokenBalance.data === undefined ? 'checking' : reviewBalanceCovered ? 'covered' : 'insufficient'}`} role="img" aria-label={!reviewTokenAddress ? 'AI review balance is unavailable' : reviewTokenBalance.data === undefined ? 'AI review balance is being checked' : reviewBalanceCovered ? 'AI review balance is covered' : 'AI review balance is insufficient'}>
-                              {reviewBalanceCovered ? <Check /> : reviewTokenAddress && reviewTokenBalance.data === undefined ? '…' : '!'}
-                            </span>
+                            <span className={`balanceCheckBadge covered`} role="img" aria-label="Owl AI review cost"><Check /></span>
                             <div className="balanceSummaryCopy">
-                              <span>AI review balance</span>
-                              <strong>{!reviewTokenAddress ? 'Unavailable' : reviewTokenBalance.data === undefined ? 'Loading…' : `${formatUnits(reviewTokenBalance.data, reviewTokenDecimals)} ${reviewTokenSymbol}`}</strong>
-                              <small><b>{reviewPrice} {reviewTokenSymbol} required</b> for the Owl Agent review.</small>
+                              <span>Owl AI · {reviewPlan === 'SECURITY' ? 'Security' : 'Standard'}</span>
+                              <strong>{reviewPrice} {reviewTokenSymbol}</strong>
                             </div>
                           </div>
                         )}
+                        <div className="balanceSummaryRow balanceSummaryTotal">
+                          <span className={`balanceCheckBadge ${visibleBalancesChecking ? 'checking' : visibleBalancesCovered ? 'covered' : 'insufficient'}`} role="img" aria-label={visibleBalancesChecking ? 'Checking wallet balance' : visibleBalancesCovered ? 'Wallet balance is sufficient' : 'Wallet balance is insufficient'}>
+                            {visibleBalancesChecking ? '…' : visibleBalancesCovered ? <Check /> : '!'}
+                          </span>
+                          <div className="balanceSummaryCopy">
+                            <span>Total cost</span>
+                            <strong>{formatUnits(rewardUnits + reviewUnits, rewardTokenDecimals)} {rewardTokenSymbol}</strong>
+                            {!hasEnoughBalance && <small>Insufficient balance. Add GOAT Testnet3 USDC to your wallet.</small>}
+                          </div>
+                        </div>
                       </div>
                     </section>
                   )}
-                  {claimErrorMessage && <p className="formError" role="alert">{claimErrorMessage}</p>}
                 </>
               )}
             </motion.div>

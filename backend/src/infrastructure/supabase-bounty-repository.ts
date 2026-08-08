@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BountyRepository } from '../application/ports.js';
-import type { AgentDecision, Bounty, BountyStatus, BrowserReviewPaymentOrder, Criterion, FlowOrderStatus, ReviewPaymentStatus, ReviewPlan, Submission } from '../domain/schemas.js';
+import type { AgentDecision, Bounty, BountyStatus, BrowserReviewPaymentOrder, Criterion, FlowOrderStatus, ReviewPaymentStatus, ReviewPlan, RevisionRequest, Submission, TimeoutResolution } from '../domain/schemas.js';
 
 interface BountyRow {
   id: string;
@@ -28,12 +28,22 @@ interface BountyRow {
   review_payment_pending_tx_hash: string | null;
   review_paid_at: string | null;
   review_consumed_at: string | null;
+  revision_requests: RevisionRequest[] | null;
+  contributor_deadline: string | null;
+  maintainer_review_deadline: string | null;
+  revision_extension_used: boolean | null;
+  timeout_resolution: TimeoutResolution | null;
+  timeout_resolved_at: string | null;
+  appeal_deadline: string | null;
+  appeal_message: string | null;
   deadline: string;
   criteria: Criterion[];
   status: BountyStatus;
   onchain_id: string | null;
+  escrow_contract_address: string | null;
   funding_tx_hash: string | null;
   payout_tx_hash: string | null;
+  refund_tx_hash: string | null;
   assigned_developer_user_id: string | null;
   assigned_developer_github_login: string | null;
   assigned_developer_address: string | null;
@@ -60,8 +70,19 @@ export class SupabaseBountyRepository implements BountyRepository {
   }
 
   async save(bounty: Bounty): Promise<void> {
-    const { error } = await this.client.from('bounties').upsert(toRow(bounty), { onConflict: 'id' });
-    if (error) throw new Error(`Supabase save failed: ${error.message}`);
+    const row = toRow(bounty);
+    const { error } = await this.client.from('bounties').upsert(row, { onConflict: 'id' });
+    if (!error) return;
+    // Keep deployments available while migration 0010 is being rolled out. Existing
+    // funding transactions still resolve to their historical contract below.
+    if (error.message.includes("'escrow_contract_address' column")) {
+      const legacyRow: Partial<BountyRow> = { ...row };
+      delete legacyRow.escrow_contract_address;
+      const { error: legacyError } = await this.client.from('bounties').upsert(legacyRow, { onConflict: 'id' });
+      if (!legacyError) return;
+      throw new Error(`Supabase save failed: ${legacyError.message}`);
+    }
+    throw new Error(`Supabase save failed: ${error.message}`);
   }
 }
 
@@ -79,6 +100,11 @@ function fromRow(row: BountyRow): Bounty {
     reviewPaymentStatus: row.review_payment_status ?? 'REQUIRED',
     reviewPaymentTxHashes: row.review_payment_tx_hashes ?? (row.review_payment_tx_hash ? [row.review_payment_tx_hash] : []),
     reviewPaymentOrderIds: row.review_payment_order_ids ?? (row.review_payment_order_id ? [row.review_payment_order_id] : []),
+    revisionRequests: row.revision_requests ?? [],
+    contributorDeadline: new Date(row.contributor_deadline ?? row.deadline).toISOString(),
+    maintainerReviewDeadline: new Date(row.maintainer_review_deadline ?? new Date(row.deadline).getTime() + 7 * 24 * 60 * 60 * 1_000).toISOString(),
+    revisionExtensionUsed: row.revision_extension_used ?? false,
+    timeoutResolution: row.timeout_resolution ?? 'NONE',
     deadline: new Date(row.deadline).toISOString(),
     criteria: row.criteria,
     status: row.status,
@@ -87,8 +113,11 @@ function fromRow(row: BountyRow): Bounty {
   };
   if (row.owner_user_id) bounty.ownerUserId = row.owner_user_id;
   if (row.onchain_id) bounty.onchainId = row.onchain_id;
+  const escrowContractAddress = row.escrow_contract_address ?? legacyEscrowContract(row.funding_tx_hash);
+  if (escrowContractAddress) bounty.escrowContractAddress = escrowContractAddress;
   if (row.funding_tx_hash) bounty.fundingTxHash = row.funding_tx_hash;
   if (row.payout_tx_hash) bounty.payoutTxHash = row.payout_tx_hash;
+  if (row.refund_tx_hash) bounty.refundTxHash = row.refund_tx_hash;
   if (row.assigned_developer_user_id) bounty.assignedDeveloperUserId = row.assigned_developer_user_id;
   if (row.assigned_developer_github_login) bounty.assignedDeveloperGithubLogin = row.assigned_developer_github_login;
   if (row.assigned_developer_address) bounty.assignedDeveloperAddress = row.assigned_developer_address;
@@ -107,7 +136,21 @@ function fromRow(row: BountyRow): Bounty {
   if (row.review_payment_pending_tx_hash) bounty.reviewPaymentPendingTxHash = row.review_payment_pending_tx_hash;
   if (row.review_paid_at) bounty.reviewPaidAt = new Date(row.review_paid_at).toISOString();
   if (row.review_consumed_at) bounty.reviewConsumedAt = new Date(row.review_consumed_at).toISOString();
+  if (row.timeout_resolved_at) bounty.timeoutResolvedAt = new Date(row.timeout_resolved_at).toISOString();
+  if (row.appeal_deadline) bounty.appealDeadline = new Date(row.appeal_deadline).toISOString();
+  if (row.appeal_message) bounty.appealMessage = row.appeal_message;
   return bounty;
+}
+
+const LEGACY_ESCROW_BY_FUNDING_TX = new Map([
+  ['0x474d4b554f3bed32159d078d2ba3f0a49811348acd5d4118332476cc992b2561', '0x9682ba996dd174ad87573a9cc0fb6bf228f72f24'],
+  ['0xee91a885df7ff23525d7d540f29cb3b4249a9094df4c57c2c3bb3c0ba37c1d37', '0x9682ba996dd174ad87573a9cc0fb6bf228f72f24'],
+  ['0xd4d00f0d630b20f5ac44fc50601f0f714a2fec276e7e46ec4d75f5195614cf19', '0x9682ba996dd174ad87573a9cc0fb6bf228f72f24'],
+  ['0xf806d6483d34fce8cf63ab81d4760d2cdd7676c14b30ede37d5c12d36b8289fe', '0x1c45b6064d938545e4f22ae41cba42c7884c575f']
+]);
+
+function legacyEscrowContract(fundingTxHash: string | null) {
+  return fundingTxHash ? LEGACY_ESCROW_BY_FUNDING_TX.get(fundingTxHash.toLowerCase()) : undefined;
 }
 
 function toRow(bounty: Bounty) {
@@ -137,12 +180,22 @@ function toRow(bounty: Bounty) {
     review_payment_pending_tx_hash: bounty.reviewPaymentPendingTxHash ?? null,
     review_paid_at: bounty.reviewPaidAt ?? null,
     review_consumed_at: bounty.reviewConsumedAt ?? null,
+    revision_requests: bounty.revisionRequests,
+    contributor_deadline: bounty.contributorDeadline,
+    maintainer_review_deadline: bounty.maintainerReviewDeadline,
+    revision_extension_used: bounty.revisionExtensionUsed,
+    timeout_resolution: bounty.timeoutResolution,
+    timeout_resolved_at: bounty.timeoutResolvedAt ?? null,
+    appeal_deadline: bounty.appealDeadline ?? null,
+    appeal_message: bounty.appealMessage ?? null,
     deadline: bounty.deadline,
     criteria: bounty.criteria,
     status: bounty.status,
     onchain_id: bounty.onchainId ?? null,
+    escrow_contract_address: bounty.escrowContractAddress?.toLowerCase() ?? null,
     funding_tx_hash: bounty.fundingTxHash ?? null,
     payout_tx_hash: bounty.payoutTxHash ?? null,
+    refund_tx_hash: bounty.refundTxHash ?? null,
     assigned_developer_user_id: bounty.assignedDeveloperUserId ?? null,
     assigned_developer_github_login: bounty.assignedDeveloperGithubLogin ?? null,
     assigned_developer_address: bounty.assignedDeveloperAddress?.toLowerCase() ?? null,

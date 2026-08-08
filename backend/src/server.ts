@@ -1,12 +1,12 @@
-import { buildApp } from './app.js';
+import Fastify from 'fastify';
+import { buildApp } from './create-app.js';
 import { env } from './config/env.js';
 
-const app = buildApp();
+// Vercel's Fastify adapter detects a direct Fastify import in the server
+// entrypoint. Passing the factory keeps app construction independently testable.
+const app = buildApp(Fastify);
 
-try {
-  await app.listen({ port: env.PORT, host: env.HOST });
-} catch (error) {
+app.listen({ port: env.PORT, host: env.HOST }).catch((error: unknown) => {
   app.log.error(error);
   process.exit(1);
-}
-
+});

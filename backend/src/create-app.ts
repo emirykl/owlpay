@@ -19,9 +19,10 @@ import { DemoAuthVerifier } from './application/auth.js';
 import { DemoWalletIdentity } from './infrastructure/demo-wallet-identity.js';
 import { SupabaseWalletIdentity } from './infrastructure/supabase-wallet-identity.js';
 import { registerRoutes } from './http/routes.js';
+import { runAfterResponse } from './infrastructure/background-task.js';
 
-export function buildApp() {
-  const app = Fastify({ logger: env.NODE_ENV !== 'test' });
+export function buildApp(createFastify: typeof Fastify = Fastify) {
+  const app = createFastify({ logger: env.NODE_ENV !== 'test' });
   const supabase = env.PERSISTENCE_MODE === 'supabase'
     ? createSupabaseAdminClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY)
     : null;
@@ -53,16 +54,57 @@ export function buildApp() {
       tokenDecimals: env.GOAT_FLOW_TOKEN_DECIMALS,
       standardPrice: env.STANDARD_REVIEW_PRICE,
       securityPrice: env.SECURITY_REVIEW_PRICE
+    },
+    {
+      escrowContractAddress: env.OWL_PAY_CONTRACT_ADDRESS as `0x${string}` | ''
     }
   );
 
+  const allowedOrigins = env.FRONTEND_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean);
   app.register(cors, {
-    origin: env.FRONTEND_ORIGIN,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (server-to-server, curl, mobile)
+      if (!origin) return callback(null, true);
+      // Check exact match against configured origins
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      // Allow Vercel preview deployment URLs for configured domains
+      if (allowedOrigins.some((allowed) => {
+        try {
+          const host = new URL(allowed).hostname;
+          // Match *.vercel.app preview URLs for the same Vercel team
+          if (host.endsWith('.vercel.app') && origin.endsWith('.vercel.app')) return true;
+        } catch { /* ignore */ }
+        return false;
+      })) return callback(null, true);
+      callback(new Error('CORS: origin not allowed'), false);
+    },
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Agent-Key', 'X-GitHub-Token'],
     exposedHeaders: ['PAYMENT-REQUIRED']
   });
-  app.register(async (routesApp) => registerRoutes(routesApp, service, auth, walletIdentity));
+  app.register(async (routesApp) => registerRoutes(routesApp, service, auth, walletIdentity, runAfterResponse));
+
+  // Vercel functions are short-lived and may scale to multiple instances. The
+  // protected cron route owns deadline resolution there; this interval remains
+  // available for local development and persistent Node.js hosts.
+  if (env.NODE_ENV !== 'test' && env.ENABLE_RESOLUTION_WORKER && process.env.VERCEL !== '1') {
+    let resolutionRunning = false;
+    const resolveDueBounties = async () => {
+      if (resolutionRunning) return;
+      resolutionRunning = true;
+      try {
+        await service.resolveDueBounties();
+      } catch (error) {
+        app.log.error(error, 'Bounty resolution worker failed');
+      } finally {
+        resolutionRunning = false;
+      }
+    };
+    const resolutionTimer = setInterval(resolveDueBounties, env.RESOLUTION_WORKER_INTERVAL_MS);
+    resolutionTimer.unref();
+    app.addHook('onReady', resolveDueBounties);
+    app.addHook('onClose', async () => clearInterval(resolutionTimer));
+  }
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ZodError) {

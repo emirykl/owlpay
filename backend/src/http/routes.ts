@@ -4,10 +4,19 @@ import type { AuthVerifier } from '../application/auth.js';
 import type { WalletIdentity } from '../application/wallet-identity.js';
 import { addressSchema, bytes32Schema } from '../domain/schemas.js';
 import { env } from '../config/env.js';
-import { createApplicationSchema, createBountySchema, submitWorkSchema, verificationInputSchema } from '../domain/schemas.js';
+import { appealResolutionSchema, createApplicationSchema, createBountySchema, requestRevisionSchema, submitWorkSchema, verificationInputSchema } from '../domain/schemas.js';
 import { getNetworkStatus } from '../infrastructure/goat-client.js';
+import { bountyForViewer } from '../application/bounty-visibility.js';
 
-export async function registerRoutes(app: FastifyInstance, service: BountyService, auth: AuthVerifier, walletIdentity: WalletIdentity) {
+type BackgroundTaskRunner = (task: Promise<unknown>) => void;
+
+export async function registerRoutes(
+  app: FastifyInstance,
+  service: BountyService,
+  auth: AuthVerifier,
+  walletIdentity: WalletIdentity,
+  runInBackground: BackgroundTaskRunner
+) {
   app.get('/health', async () => ({
     status: 'ok',
     service: 'owlpay-api',
@@ -22,6 +31,11 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     explorerUrl: env.GOAT_EXPLORER_URL,
     contractAddress: env.OWL_PAY_CONTRACT_ADDRESS || null,
     paymentTokenAddress: env.PAYMENT_TOKEN_ADDRESS || null,
+    paymentToken: {
+      address: env.PAYMENT_TOKEN_ADDRESS || null,
+      symbol: env.PAYMENT_TOKEN_SYMBOL,
+      decimals: env.PAYMENT_TOKEN_DECIMALS
+    },
     reviewPaymentToken: {
       address: env.GOAT_FLOW_TOKEN_ADDRESS || null,
       symbol: env.GOAT_FLOW_TOKEN_SYMBOL,
@@ -32,6 +46,14 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     writesEnabled: env.ENABLE_TESTNET_WRITES,
     status: await getNetworkStatus()
   }));
+
+  app.get('/api/cron/resolve-due', async (request, reply) => {
+    if (!env.CRON_SECRET || request.headers.authorization !== `Bearer ${env.CRON_SECRET}`) {
+      return reply.code(401).send({ code: 'UNAUTHORIZED', message: 'Cron authorization is required' });
+    }
+    const items = await service.resolveDueBounties();
+    return { ok: true, processed: items.length, items };
+  });
 
   app.get('/api/me', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
@@ -62,11 +84,24 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
   app.get('/api/bounties', async (request) => {
     const actor = await auth.optionalUser(request.headers.authorization);
     const items = await service.list();
-    return { items: items.filter((bounty) => bounty.status !== 'DRAFT' || bounty.ownerUserId === actor?.id) };
+    return {
+      items: items
+        .filter((bounty) => bounty.status !== 'DRAFT' || bounty.ownerUserId === actor?.id)
+        .map((bounty) => bountyForViewer(bounty, actor?.id))
+    };
   });
   app.get('/api/applications/me', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
-    return { items: await service.listMyApplications(actor) };
+    const items = await service.listMyApplications(actor);
+    return { items: items.map((item) => ({ ...item, bounty: bountyForViewer(item.bounty, actor.id) })) };
+  });
+  app.get('/api/applications/slots', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    return service.getApplicationSlots(actor);
+  });
+  app.post<{ Params: { applicationId: string } }>('/api/applications/:applicationId/withdraw', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    return service.withdrawApplication(request.params.applicationId, actor);
   });
   app.get<{ Params: { id: string } }>('/api/bounties/:id', async (request) => {
     const actor = await auth.optionalUser(request.headers.authorization);
@@ -76,7 +111,11 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
       error.statusCode = 404;
       throw error;
     }
-    return bounty;
+    return bountyForViewer(bounty, actor?.id);
+  });
+  app.get<{ Params: { id: string } }>('/api/bounties/:id/submission-report-evidence', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    return service.getSubmissionReportEvidence(request.params.id, actor);
   });
 
   app.post('/api/bounties', async (request, reply) => {
@@ -94,6 +133,13 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
       return replyValidation(request, 'onchainId and a valid fundingTxHash are required');
     }
     return service.markFunded(request.params.id, body.onchainId, body.fundingTxHash!, actor.id);
+  });
+
+  app.post<{ Params: { id: string } }>('/api/bounties/:id/refunded', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    const body = request.body as { refundTxHash?: string };
+    const refundTxHash = bytes32Schema.parse(body.refundTxHash);
+    return service.markRefunded(request.params.id, refundTxHash, actor);
   });
 
   app.post<{ Params: { id: string } }>('/api/bounties/:id/applications', async (request, reply) => {
@@ -129,9 +175,11 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     await walletIdentity.assertLinked(actor, input.developerAddress);
     const result = await service.submit(request.params.id, input, actor);
     if (result.bounty.reviewPaymentStatus === 'PAID') {
-      void service.runPaidReview(request.params.id).catch((error) => request.log.error(error, 'Automatic Owl Agent review failed'));
+      runInBackground(service.runPaidReview(request.params.id).catch((error) => {
+        request.log.error(error, 'Automatic Owl Agent review failed');
+      }));
     }
-    return reply.code(201).send(result);
+    return reply.code(201).send({ ...result, bounty: bountyForViewer(result.bounty, actor.id) });
   });
 
   app.post<{ Params: { id: string } }>('/api/bounties/:id/review-payment', async (request, reply) => {
@@ -151,7 +199,9 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
     if (!body.orderId || body.orderId.length > 200) return replyValidation(request, 'A valid GOAT Flow orderId is required');
     const updated = await service.confirmReviewPayment(request.params.id, body.orderId, bytes32Schema.parse(body.txHash) as `0x${string}`, actor);
     if (updated.status === 'SUBMITTED' && updated.reviewPaymentStatus === 'PAID') {
-      void service.runPaidReview(request.params.id).catch((error) => request.log.error(error, 'Automatic upgraded Owl Agent review failed'));
+      runInBackground(service.runPaidReview(request.params.id).catch((error) => {
+        request.log.error(error, 'Automatic upgraded Owl Agent review failed');
+      }));
     }
     return updated;
   });
@@ -178,7 +228,13 @@ export async function registerRoutes(app: FastifyInstance, service: BountyServic
 
   app.post<{ Params: { id: string } }>('/api/bounties/:id/request-revision', async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
-    return service.requestRevision(request.params.id, actor);
+    return service.requestRevision(request.params.id, actor, requestRevisionSchema.parse(request.body));
+  });
+
+  app.post<{ Params: { id: string } }>('/api/bounties/:id/resolution-appeal', async (request) => {
+    const actor = await auth.requireUser(request.headers.authorization);
+    const input = appealResolutionSchema.parse(request.body);
+    return bountyForViewer(await service.appealTimeoutResolution(request.params.id, actor, input.message), actor.id);
   });
 }
 

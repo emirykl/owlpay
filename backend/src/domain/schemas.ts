@@ -51,6 +51,14 @@ export const submitWorkSchema = z.object({
   submissionTxHash: bytes32Schema.optional()
 });
 
+export const requestRevisionSchema = z.object({
+  message: z.string().trim().min(10).max(2000)
+});
+
+export const appealResolutionSchema = z.object({
+  message: z.string().trim().min(20).max(2000)
+});
+
 export const applicationStatusSchema = z.enum(['PENDING', 'ACCEPTED', 'REJECTED', 'WITHDRAWN']);
 
 export const createApplicationSchema = z.object({
@@ -65,8 +73,16 @@ export const criterionResultSchema = z.object({
   summary: z.string().max(1000)
 });
 
+export const taskAssessmentSchema = z.object({
+  status: z.enum(['FULLY_MET', 'MOSTLY_MET', 'PARTIALLY_MET', 'NOT_MET', 'UNKNOWN']),
+  score: z.number().int().min(0).max(100),
+  evidence: z.array(z.string()).max(10),
+  summary: z.string().max(1000)
+});
+
 export const verificationInputSchema = z.object({
   confidence: z.number().min(0).max(1),
+  taskAssessment: taskAssessmentSchema.optional(),
   criterionResults: z.array(criterionResultSchema),
   blockingIssues: z.array(z.string()).max(20).default([]),
   commitSha: z.string().regex(/^[a-fA-F0-9]{40}$/).optional()
@@ -76,6 +92,7 @@ export type Criterion = z.infer<typeof criterionSchema>;
 export type BountyStatus = z.infer<typeof bountyStatusSchema>;
 export type CreateBountyInput = z.infer<typeof createBountySchema>;
 export type SubmitWorkInput = z.infer<typeof submitWorkSchema>;
+export type RequestRevisionInput = z.infer<typeof requestRevisionSchema>;
 export type VerificationInput = z.infer<typeof verificationInputSchema>;
 export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
@@ -118,17 +135,35 @@ export interface Submission {
   commitSha: string;
   submissionHash: string;
   submissionTxHash?: string;
+  author?: string;
+  changedFiles?: number;
+  additions?: number;
+  deletions?: number;
   submittedAt: string;
 }
 
 export interface AgentDecision {
   decision: 'APPROVE' | 'REVISION_REQUIRED' | 'HUMAN_REVIEW';
   confidence: number;
+  score?: number;
+  taskAssessment?: z.infer<typeof taskAssessmentSchema>;
   summary: string;
   blockingIssues: string[];
   criterionResults: z.infer<typeof criterionResultSchema>[];
   decidedAt: string;
 }
+
+export interface RevisionRequest {
+  id: string;
+  message: string;
+  commitSha: string;
+  requestedAt: string;
+  requestedByGithubLogin?: string;
+  extensionGranted?: boolean;
+  contributorDeadline?: string;
+}
+
+export type TimeoutResolution = 'NONE' | 'AUTO_APPROVED' | 'AUTO_FAILED_PENDING' | 'INCONCLUSIVE' | 'DISPUTED' | 'AUTO_REFUNDED';
 
 export interface Bounty extends CreateBountyInput {
   id: string;
@@ -136,8 +171,10 @@ export interface Bounty extends CreateBountyInput {
   status: BountyStatus;
   createdAt: string;
   onchainId?: string;
+  escrowContractAddress?: string;
   fundingTxHash?: string;
   payoutTxHash?: string;
+  refundTxHash?: string;
   assignedDeveloperUserId?: string;
   assignedDeveloperGithubLogin?: string;
   assignedDeveloperAddress?: string;
@@ -160,6 +197,14 @@ export interface Bounty extends CreateBountyInput {
   reviewPaymentPendingTxHash?: string;
   reviewPaidAt?: string;
   reviewConsumedAt?: string;
+  revisionRequests: RevisionRequest[];
+  contributorDeadline: string;
+  maintainerReviewDeadline: string;
+  revisionExtensionUsed: boolean;
+  timeoutResolution: TimeoutResolution;
+  timeoutResolvedAt?: string;
+  appealDeadline?: string;
+  appealMessage?: string;
   submission?: Submission;
   decision?: AgentDecision;
 }

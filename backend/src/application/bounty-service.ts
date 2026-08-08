@@ -1,10 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { parseUnits } from 'viem';
 import { DomainError } from '../domain/errors.js';
-import type { Bounty, BountyApplication, BrowserReviewPaymentOrder, CreateApplicationInput, CreateBountyInput, ReviewPlan, SubmitWorkInput, VerificationInput } from '../domain/schemas.js';
+import type { Bounty, BountyApplication, BrowserReviewPaymentOrder, CreateApplicationInput, CreateBountyInput, RequestRevisionInput, ReviewPlan, RevisionRequest, SubmitWorkInput, VerificationInput } from '../domain/schemas.js';
 import type { ApplicationRepository, BountyRepository, GitHubEvidenceProvider, PullRequestEvidence, ReviewPaymentGateway, ReviewPaymentVerifier, SettlementGateway } from './ports.js';
 import type { VerificationPolicy } from './verification-policy.js';
 import type { AuthUser } from './auth.js';
+
+const DAY_MS = 24 * 60 * 60 * 1_000;
+const MAINTAINER_REVIEW_PERIOD_MS = 7 * DAY_MS;
+const REVISION_RESPONSE_PERIOD_MS = 2 * DAY_MS;
+const APPEAL_PERIOD_MS = 2 * DAY_MS;
+const MAX_REVISIONS = 2;
+const MAX_ACTIVE_APPLICATIONS = 5;
+const AUTO_PAYOUT_SCORE = 0.6;
 
 export class BountyService {
   constructor(
@@ -15,7 +23,8 @@ export class BountyService {
     private readonly settlement: SettlementGateway = noopSettlementGateway,
     private readonly reviewPaymentGateway: ReviewPaymentGateway = unavailableReviewPaymentGateway,
     private readonly reviewPayments: ReviewPaymentVerifier = unavailableReviewPaymentVerifier,
-    private readonly reviewConfig: ReviewConfig = defaultReviewConfig
+    private readonly reviewConfig: ReviewConfig = defaultReviewConfig,
+    private readonly settlementConfig: SettlementConfig = defaultSettlementConfig
   ) {}
 
   async list() {
@@ -58,8 +67,16 @@ export class BountyService {
       reviewPaidAmount: '0',
       reviewPaymentStatus: input.reviewPlan === 'NONE' ? 'NOT_REQUIRED' : 'REQUIRED',
       reviewPaymentTxHashes: [],
-      reviewPaymentOrderIds: []
+      reviewPaymentOrderIds: [],
+      revisionRequests: [],
+      contributorDeadline: input.deadline,
+      maintainerReviewDeadline: new Date(new Date(input.deadline).getTime() + MAINTAINER_REVIEW_PERIOD_MS).toISOString(),
+      revisionExtensionUsed: false,
+      timeoutResolution: 'NONE'
     };
+    if (this.settlementConfig.escrowContractAddress) {
+      bounty.escrowContractAddress = this.settlementConfig.escrowContractAddress.toLowerCase();
+    }
     await this.repository.save(bounty);
     return bounty;
   }
@@ -190,6 +207,8 @@ export class BountyService {
     if (bounty.ownerUserId === actor.id) throw new DomainError('The bounty owner cannot apply to their own bounty', 403, 'OWNER_CANNOT_APPLY');
     const existing = await this.applications.findByBountyAndDeveloper(id, actor.id);
     if (existing) throw new DomainError('You already applied to this bounty', 409, 'ALREADY_APPLIED');
+    const activeCount = await this.applications.countActiveByDeveloper(actor.id);
+    if (activeCount >= MAX_ACTIVE_APPLICATIONS) throw new DomainError('You have reached the maximum of 5 active applications. Withdraw a pending application to free a slot.', 409, 'MAX_ACTIVE_APPLICATIONS_REACHED');
     const now = new Date().toISOString();
     const application: BountyApplication = {
       id: randomUUID(),
@@ -216,6 +235,43 @@ export class BountyService {
   async listMyApplications(actor: AuthUser) {
     const applications = await this.applications.listByDeveloper(actor.id);
     return Promise.all(applications.map(async (application) => ({ application, bounty: await this.get(application.bountyId) })));
+  }
+
+  async withdrawApplication(applicationId: string, actor: AuthUser) {
+    const application = await this.applications.get(applicationId);
+    if (!application || application.developerUserId !== actor.id) throw new DomainError('Application not found', 404, 'APPLICATION_NOT_FOUND');
+    if (application.status !== 'PENDING') throw new DomainError('Only pending applications can be withdrawn', 409, 'APPLICATION_NOT_PENDING');
+    await this.applications.withdraw(applicationId);
+    return { ...application, status: 'WITHDRAWN' as const, updatedAt: new Date().toISOString() };
+  }
+
+  async getApplicationSlots(actor: AuthUser) {
+    const activeCount = await this.applications.countActiveByDeveloper(actor.id);
+    return { active: activeCount, max: MAX_ACTIVE_APPLICATIONS, remaining: Math.max(0, MAX_ACTIVE_APPLICATIONS - activeCount) };
+  }
+
+  async getSubmissionReportEvidence(id: string, actor: AuthUser) {
+    const bounty = await this.get(id);
+    this.assertOwner(bounty, actor.id);
+    if (!bounty.submission) throw new DomainError('Bounty has no submitted pull request', 409, 'SUBMISSION_REQUIRED');
+    if (bounty.submission.changedFiles !== undefined) {
+      return {
+        author: bounty.submission.author,
+        changedFiles: bounty.submission.changedFiles,
+        additions: bounty.submission.additions ?? 0,
+        deletions: bounty.submission.deletions ?? 0
+      };
+    }
+    const evidence = await this.github.getPullRequest(bounty.submission.pullRequestUrl);
+    if (evidence.headSha !== bounty.submission.commitSha) {
+      throw new DomainError('The pull request changed after this report was created', 409, 'COMMIT_MISMATCH');
+    }
+    return {
+      author: evidence.author,
+      changedFiles: evidence.changedFiles,
+      additions: evidence.additions,
+      deletions: evidence.deletions
+    };
   }
 
   async assign(id: string, applicationId: string, actor: AuthUser, assignmentTxHash?: string) {
@@ -255,6 +311,9 @@ export class BountyService {
     if (!['ASSIGNED', 'REVISION_REQUIRED'].includes(bounty.status)) {
       throw new DomainError('Bounty is not accepting submissions');
     }
+    if (Date.now() > new Date(bounty.contributorDeadline).getTime()) {
+      throw new DomainError('The contributor submission deadline has passed', 409, 'CONTRIBUTOR_DEADLINE_PASSED');
+    }
     if (bounty.assignedDeveloperUserId !== actor.id) throw new DomainError('Only the assigned developer can submit work', 403, 'DEVELOPER_NOT_ASSIGNED');
     if (bounty.assignedDeveloperAddress?.toLowerCase() !== input.developerAddress.toLowerCase()) throw new DomainError('Use the wallet selected with your accepted application', 403, 'ASSIGNED_WALLET_MISMATCH');
     const evidence = await this.github.getPullRequest(input.pullRequestUrl);
@@ -281,11 +340,19 @@ export class BountyService {
         developerUserId: actor.id,
         commitSha: evidence.headSha,
         submissionHash,
+        author: evidence.author,
+        changedFiles: evidence.changedFiles,
+        additions: evidence.additions,
+        deletions: evidence.deletions,
         ...(input.submissionTxHash ? { submissionTxHash: input.submissionTxHash } : {}),
         submittedAt: new Date().toISOString()
       }
     };
     delete updated.decision;
+    updated.timeoutResolution = 'NONE';
+    delete updated.timeoutResolvedAt;
+    delete updated.appealDeadline;
+    delete updated.appealMessage;
     await this.repository.save(updated);
     return { bounty: updated, evidence };
   }
@@ -338,12 +405,17 @@ export class BountyService {
   async approve(id: string, actor: AuthUser) {
     const bounty = await this.get(id);
     this.assertOwner(bounty, actor.id);
+    if (Date.now() > new Date(bounty.maintainerReviewDeadline).getTime()) {
+      throw new DomainError('The maintainer review period has ended; Owl AI resolution is now required', 409, 'MAINTAINER_REVIEW_EXPIRED');
+    }
     const manualReviewReady = bounty.reviewPlan === 'NONE' && bounty.status === 'SUBMITTED' && bounty.submission;
     const agentReviewReady = bounty.reviewPlan !== 'NONE' && bounty.status === 'READY_FOR_REVIEW' && bounty.decision;
-    if (!manualReviewReady && !agentReviewReady) throw new DomainError('This bounty is not ready for maintainer approval', 409, 'NOT_READY_FOR_REVIEW');
+    const revisionFollowupReady = bounty.status === 'SUBMITTED' && bounty.revisionRequests.length > 0 && bounty.submission;
+    if (!manualReviewReady && !agentReviewReady && !revisionFollowupReady) throw new DomainError('This bounty is not ready for maintainer approval', 409, 'NOT_READY_FOR_REVIEW');
     const payoutTxHash = await this.settlement.approveAndRelease(
       requireOnchainId(bounty, this.settlement.writesEnabled),
-      bounty.decision ? hashDecision(bounty.decision) : hashManualDecision(bounty, 'APPROVE')
+      bounty.decision ? hashDecision(bounty.decision) : hashManualDecision(bounty, 'APPROVE'),
+      bounty.escrowContractAddress
     );
     const updated: Bounty = payoutTxHash
       ? { ...bounty, status: 'PAID', payoutTxHash }
@@ -352,25 +424,195 @@ export class BountyService {
     return updated;
   }
 
-  async requestRevision(id: string, actor: AuthUser) {
+  async requestRevision(id: string, actor: AuthUser, input: RequestRevisionInput) {
     const bounty = await this.get(id);
     this.assertOwner(bounty, actor.id);
     const manualReviewReady = bounty.reviewPlan === 'NONE' && bounty.status === 'SUBMITTED' && bounty.submission;
     const agentReviewReady = bounty.reviewPlan !== 'NONE' && bounty.status === 'READY_FOR_REVIEW' && bounty.decision;
-    if (!manualReviewReady && !agentReviewReady) throw new DomainError('This bounty is not ready for maintainer review', 409, 'NOT_READY_FOR_REVIEW');
+    const revisionFollowupReady = bounty.status === 'SUBMITTED' && bounty.revisionRequests.length > 0 && bounty.submission;
+    if (!manualReviewReady && !agentReviewReady && !revisionFollowupReady) throw new DomainError('This bounty is not ready for maintainer review', 409, 'NOT_READY_FOR_REVIEW');
+    if (bounty.revisionRequests.length >= MAX_REVISIONS) {
+      throw new DomainError('This bounty has reached its two-revision limit', 409, 'MAXIMUM_REVISIONS_REACHED');
+    }
+    const now = Date.now();
+    const reviewDeadline = new Date(bounty.maintainerReviewDeadline).getTime();
+    if (now + REVISION_RESPONSE_PERIOD_MS > reviewDeadline) {
+      throw new DomainError('There is not enough time left in the fixed maintainer review window to request another revision', 409, 'REVISION_WINDOW_CLOSED');
+    }
+    const currentContributorDeadline = new Date(bounty.contributorDeadline).getTime();
+    if (bounty.revisionExtensionUsed && now >= currentContributorDeadline) {
+      throw new DomainError('The one-time contributor extension has ended', 409, 'CONTRIBUTOR_DEADLINE_PASSED');
+    }
+    const extensionGranted = !bounty.revisionExtensionUsed && currentContributorDeadline < now + REVISION_RESPONSE_PERIOD_MS;
+    const contributorDeadline = extensionGranted
+      ? new Date(now + REVISION_RESPONSE_PERIOD_MS).toISOString()
+      : bounty.contributorDeadline;
+    const revisionRequest: RevisionRequest = {
+      id: randomUUID(),
+      message: input.message,
+      commitSha: bounty.submission!.commitSha,
+      requestedAt: new Date().toISOString(),
+      extensionGranted,
+      contributorDeadline,
+      ...(actor.githubLogin ? { requestedByGithubLogin: actor.githubLogin } : {})
+    };
     await this.settlement.requestRevision(
       requireOnchainId(bounty, this.settlement.writesEnabled),
-      bounty.decision ? hashDecision(bounty.decision) : hashManualDecision(bounty, 'REVISION_REQUIRED')
+      hashRevisionRequest(bounty, revisionRequest),
+      bounty.escrowContractAddress
     );
-    const updated: Bounty = { ...bounty, status: 'REVISION_REQUIRED' };
+    const updated: Bounty = {
+      ...bounty,
+      status: 'REVISION_REQUIRED',
+      revisionRequests: [...bounty.revisionRequests, revisionRequest],
+      contributorDeadline,
+      revisionExtensionUsed: bounty.revisionExtensionUsed || extensionGranted
+    };
     await this.repository.save(updated);
     return updated;
+  }
+
+  async appealTimeoutResolution(id: string, actor: AuthUser, message: string) {
+    const bounty = await this.get(id);
+    if (bounty.assignedDeveloperUserId !== actor.id) throw new DomainError('Only the assigned developer can appeal', 403, 'FORBIDDEN');
+    if (bounty.timeoutResolution !== 'AUTO_FAILED_PENDING' || !bounty.appealDeadline) {
+      throw new DomainError('This bounty has no appealable Owl AI resolution', 409, 'APPEAL_NOT_AVAILABLE');
+    }
+    if (Date.now() > new Date(bounty.appealDeadline).getTime()) throw new DomainError('The appeal window has ended', 409, 'APPEAL_WINDOW_ENDED');
+    const normalized = message.trim();
+    if (normalized.length < 20 || normalized.length > 2000) throw new DomainError('Appeal details must be between 20 and 2000 characters');
+    const updated: Bounty = { ...bounty, timeoutResolution: 'DISPUTED', appealMessage: normalized };
+    await this.repository.save(updated);
+    return updated;
+  }
+
+  async resolveDueBounties(now = Date.now()) {
+    const bounties = await this.repository.list();
+    const results: Array<{ id: string; status: Bounty['status']; resolution: Bounty['timeoutResolution'] }> = [];
+    const errors: unknown[] = [];
+    for (const bounty of bounties) {
+      try {
+        const updated = await this.resolveDueBounty(bounty, now);
+        if (updated) results.push({ id: updated.id, status: updated.status, resolution: updated.timeoutResolution });
+      } catch (error) {
+        // One unavailable PR or settlement must not prevent other due bounties from resolving.
+        errors.push(error);
+      }
+    }
+    if (errors.length > 0) throw new AggregateError(errors, `${errors.length} due bounty resolution(s) failed`);
+    return results;
+  }
+
+  private async resolveDueBounty(bounty: Bounty, now: number) {
+    if (['OPEN', 'ASSIGNED', 'REVISION_REQUIRED'].includes(bounty.status)
+      && now > new Date(bounty.contributorDeadline).getTime()) {
+      const expired: Bounty = { ...bounty, status: 'EXPIRED' };
+      await this.repository.save(expired);
+      return expired;
+    }
+    if (bounty.timeoutResolution === 'AUTO_FAILED_PENDING' && bounty.appealDeadline && now > new Date(bounty.appealDeadline).getTime()) {
+      const resolutionHash = hashTimeoutResolution(bounty, 'AUTO_REFUNDED');
+      const refundTxHash = await this.settlement.refundAfterTimeout(requireOnchainId(bounty, this.settlement.writesEnabled), resolutionHash, bounty.escrowContractAddress);
+      const refunded: Bounty = {
+        ...bounty,
+        status: 'REFUNDED',
+        timeoutResolution: 'AUTO_REFUNDED',
+        timeoutResolvedAt: new Date(now).toISOString(),
+        ...(refundTxHash ? { refundTxHash } : {})
+      };
+      await this.repository.save(refunded);
+      return refunded;
+    }
+    if (!bounty.submission || !['SUBMITTED', 'READY_FOR_REVIEW'].includes(bounty.status)) return null;
+    if (now <= new Date(bounty.maintainerReviewDeadline).getTime()) return null;
+
+    const pullRequest = await this.github.getPullRequest(bounty.submission.pullRequestUrl);
+    const commitMatches = pullRequest.headSha === bounty.submission.commitSha;
+    if (pullRequest.merged && commitMatches) {
+      const verificationHash = hashTimeoutResolution(bounty, 'MERGED');
+      const payoutTxHash = await this.settlement.approveAfterTimeout(requireOnchainId(bounty, this.settlement.writesEnabled), verificationHash, bounty.escrowContractAddress);
+      const paid: Bounty = {
+        ...bounty,
+        status: payoutTxHash ? 'PAID' : 'APPROVED',
+        timeoutResolution: 'AUTO_APPROVED',
+        timeoutResolvedAt: new Date(now).toISOString(),
+        ...(payoutTxHash ? { payoutTxHash } : {})
+      };
+      await this.repository.save(paid);
+      return paid;
+    }
+
+    let decision = bounty.decision;
+    if (!decision || !commitMatches) {
+      const input = await this.github.reviewPullRequest(
+        bounty.submission.pullRequestUrl,
+        bounty.criteria,
+        bounty.reviewPlan === 'NONE' ? 'STANDARD' : bounty.reviewPlan,
+        {
+          bountyTitle: bounty.title,
+          bountyDescription: bounty.description,
+          safetyIdentifier: createHash('sha256').update(bounty.ownerUserId ?? bounty.ownerAddress).digest('hex')
+        }
+      );
+      decision = this.policy.decide(bounty.criteria, input);
+    }
+
+    if (qualifiesForAutomaticPayout(bounty, decision) && commitMatches && pullRequest.state === 'open') {
+      const verificationHash = hashTimeoutResolution({ ...bounty, decision }, 'AUTO_APPROVED');
+      const payoutTxHash = await this.settlement.approveAfterTimeout(requireOnchainId(bounty, this.settlement.writesEnabled), verificationHash, bounty.escrowContractAddress);
+      const paid: Bounty = {
+        ...bounty,
+        decision,
+        status: payoutTxHash ? 'PAID' : 'APPROVED',
+        timeoutResolution: 'AUTO_APPROVED',
+        timeoutResolvedAt: new Date(now).toISOString(),
+        ...(payoutTxHash ? { payoutTxHash } : {})
+      };
+      await this.repository.save(paid);
+      return paid;
+    }
+
+    const explicitFailure = decisionScore(decision) < AUTO_PAYOUT_SCORE * 100
+      || decision.taskAssessment?.status === 'NOT_MET'
+      || decision.taskAssessment?.status === 'PARTIALLY_MET'
+      || decision.blockingIssues.length > 0
+      || hasFailedMandatoryCriterion(bounty, decision);
+    const unresolved: Bounty = explicitFailure
+      ? {
+          ...bounty,
+          decision,
+          status: 'HUMAN_REVIEW',
+          timeoutResolution: 'AUTO_FAILED_PENDING',
+          timeoutResolvedAt: new Date(now).toISOString(),
+          appealDeadline: new Date(now + APPEAL_PERIOD_MS).toISOString()
+        }
+      : {
+          ...bounty,
+          decision,
+          status: 'HUMAN_REVIEW',
+          timeoutResolution: 'INCONCLUSIVE',
+          timeoutResolvedAt: new Date(now).toISOString()
+        };
+    await this.repository.save(unresolved);
+    return unresolved;
   }
 
   async markPaid(id: string, payoutTxHash: string) {
     const bounty = await this.get(id);
     if (bounty.status !== 'APPROVED') throw new DomainError('Only an approved bounty can be paid', 409, 'NOT_APPROVED');
     const updated: Bounty = { ...bounty, status: 'PAID', payoutTxHash };
+    await this.repository.save(updated);
+    return updated;
+  }
+
+  async markRefunded(id: string, refundTxHash: string, actor: AuthUser) {
+    const bounty = await this.get(id);
+    this.assertOwner(bounty, actor.id);
+    if (!['OPEN', 'ASSIGNED', 'REVISION_REQUIRED', 'EXPIRED'].includes(bounty.status)
+      || Date.now() <= new Date(bounty.contributorDeadline).getTime()) {
+      throw new DomainError('This bounty is not eligible for an expired-delivery refund', 409, 'REFUND_NOT_AVAILABLE');
+    }
+    const updated: Bounty = { ...bounty, status: 'REFUNDED', refundTxHash };
     await this.repository.save(updated);
     return updated;
   }
@@ -467,6 +709,17 @@ function hashManualDecision(bounty: Bounty, action: 'APPROVE' | 'REVISION_REQUIR
   })).digest('hex')}`;
 }
 
+function hashRevisionRequest(bounty: Bounty, request: RevisionRequest): `0x${string}` {
+  return `0x${createHash('sha256').update(JSON.stringify({
+    action: 'REVISION_REQUIRED',
+    bountyId: bounty.id,
+    commitSha: request.commitSha,
+    message: request.message,
+    requestedAt: request.requestedAt,
+    reviewedBy: bounty.ownerUserId
+  })).digest('hex')}`;
+}
+
 function requireOnchainId(bounty: Bounty, required: boolean) {
   if (bounty.onchainId && /^\d+$/.test(bounty.onchainId)) return bounty.onchainId;
   if (required) throw new DomainError('This bounty is not linked to a valid on-chain escrow', 409, 'ONCHAIN_BOUNTY_REQUIRED');
@@ -476,7 +729,9 @@ function requireOnchainId(bounty: Bounty, required: boolean) {
 const noopSettlementGateway: SettlementGateway = {
   writesEnabled: false,
   async approveAndRelease() { return null; },
-  async requestRevision() { return null; }
+  async requestRevision() { return null; },
+  async approveAfterTimeout() { return null; },
+  async refundAfterTimeout() { return null; }
 };
 
 const unavailableReviewPaymentGateway: ReviewPaymentGateway = {
@@ -495,6 +750,12 @@ export interface ReviewConfig {
 }
 
 const defaultReviewConfig: ReviewConfig = { paymentToken: '', tokenDecimals: 6, standardPrice: '1', securityPrice: '2' };
+
+export interface SettlementConfig {
+  escrowContractAddress: `0x${string}` | '';
+}
+
+const defaultSettlementConfig: SettlementConfig = { escrowContractAddress: '' };
 
 const unavailableReviewPaymentVerifier: ReviewPaymentVerifier = {
   async verify() { throw new DomainError('Review payments are not configured yet', 503, 'REVIEW_PAYMENTS_NOT_CONFIGURED'); }
@@ -515,4 +776,30 @@ function formatTokenUnits(units: bigint, decimals: number) {
 
 function uniqueValues(values: string[]) {
   return [...new Set(values)];
+}
+
+function qualifiesForAutomaticPayout(bounty: Bounty, decision: NonNullable<Bounty['decision']>) {
+  if (decisionScore(decision) < AUTO_PAYOUT_SCORE * 100 || decision.confidence < AUTO_PAYOUT_SCORE || decision.blockingIssues.length > 0) return false;
+  if (decision.taskAssessment && !['FULLY_MET', 'MOSTLY_MET'].includes(decision.taskAssessment.status)) return false;
+  const resultById = new Map(decision.criterionResults.map((result) => [result.criterionId, result]));
+  return bounty.criteria.filter((criterion) => criterion.mandatory).every((criterion) => resultById.get(criterion.id)?.status === 'PASSED');
+}
+
+function decisionScore(decision: NonNullable<Bounty['decision']>) {
+  return decision.score ?? decision.taskAssessment?.score ?? Math.round(decision.confidence * 100);
+}
+
+function hasFailedMandatoryCriterion(bounty: Bounty, decision: NonNullable<Bounty['decision']>) {
+  const resultById = new Map(decision.criterionResults.map((result) => [result.criterionId, result]));
+  return bounty.criteria.some((criterion) => criterion.mandatory && resultById.get(criterion.id)?.status === 'FAILED');
+}
+
+function hashTimeoutResolution(bounty: Bounty, resolution: string): `0x${string}` {
+  return `0x${createHash('sha256').update(JSON.stringify({
+    action: resolution,
+    bountyId: bounty.id,
+    commitSha: bounty.submission?.commitSha,
+    maintainerReviewDeadline: bounty.maintainerReviewDeadline,
+    decision: bounty.decision
+  })).digest('hex')}`;
 }
