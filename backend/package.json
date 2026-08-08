@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",
+    "@fastify/rate-limit": "^11.2.0",
     "@openzeppelin/contracts": "^5.4.0",
     "@supabase/supabase-js": "^2.112.0",
     "@vercel/functions": "^3.8.0",

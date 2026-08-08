@@ -97,6 +97,47 @@ export type VerificationInput = z.infer<typeof verificationInputSchema>;
 export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
 export type ReviewPlan = CreateBountyInput['reviewPlan'];
+// --- Request body schemas for route validation ---
+
+export const walletChallengeSchema = z.object({
+  address: addressSchema
+});
+
+export const walletVerifySchema = z.object({
+  challengeId: z.string().min(1),
+  signature: z.string().regex(/^0x[a-fA-F0-9]{130}$/, 'Invalid signature')
+});
+
+export const bountyFundedSchema = z.object({
+  onchainId: z.string().min(1),
+  fundingTxHash: bytes32Schema
+});
+
+export const bountyRefundedSchema = z.object({
+  refundTxHash: bytes32Schema
+});
+
+export const bountyAssignSchema = z.object({
+  assignmentTxHash: bytes32Schema.optional()
+}).default({});
+
+export const reviewPaymentRequestSchema = z.object({
+  targetPlan: z.enum(['STANDARD', 'SECURITY']).optional()
+}).default({});
+
+export const confirmReviewPaymentSchema = z.object({
+  orderId: z.string().min(1).max(200),
+  txHash: bytes32Schema
+});
+
+export type WalletChallengeInput = z.infer<typeof walletChallengeSchema>;
+export type WalletVerifyInput = z.infer<typeof walletVerifySchema>;
+export type BountyFundedInput = z.infer<typeof bountyFundedSchema>;
+export type BountyRefundedInput = z.infer<typeof bountyRefundedSchema>;
+export type BountyAssignInput = z.infer<typeof bountyAssignSchema>;
+export type ReviewPaymentRequestInput = z.infer<typeof reviewPaymentRequestSchema>;
+export type ConfirmReviewPaymentInput = z.infer<typeof confirmReviewPaymentSchema>;
+
 export type ReviewPaymentStatus = 'NOT_REQUIRED' | 'REQUIRED' | 'PAID' | 'CONSUMED';
 export type FlowOrderStatus = 'CHECKOUT_VERIFIED' | 'PAYMENT_CONFIRMED' | 'INVOICED' | 'FAILED' | 'EXPIRED' | 'CANCELLED';
 
