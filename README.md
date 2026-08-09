@@ -29,4 +29,6 @@ npm run dev
 
 Open `http://localhost:3000`. The API runs at `http://localhost:4000`.
 
-See each application's README for Supabase migration, testnet deployment, and security notes.
+See each application's README for Supabase migration, testnet deployment, and
+security notes. The backend HTTP surface is documented in
+[`backend/API.md`](backend/API.md).

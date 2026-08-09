@@ -3,7 +3,7 @@
 ## Architecture
 
 - `domain`: schemas, lifecycle types and domain errors
-- `application`: use cases, ports and deterministic settlement policy
+- `application`: use cases, ports, review-payment policy and timeout resolution
 - `infrastructure`: GitHub, GOAT Testnet3 and persistence adapters
 - `http`: Fastify transport
 - `contracts`: single-token escrow, testnet token faucet and fee settlement
@@ -13,7 +13,7 @@ The in-memory repository is retained for isolated local tests. Shared and produc
 ## Supabase setup
 
 1. Create a Supabase project.
-2. Run the files under `supabase/migrations` in numeric order in the SQL editor. Existing projects must apply every newer migration through `0010_escrow_contract_versioning.sql`.
+2. Run the files under `supabase/migrations` in numeric order in the SQL editor. Existing projects must apply every newer migration through `0011_review_payment_conflict_lookup.sql`.
 3. Enable GitHub under Authentication → Providers and copy the Supabase callback URL into the GitHub OAuth App.
 4. Set `PERSISTENCE_MODE=supabase`, `SUPABASE_URL` and the backend-only `SUPABASE_SECRET_KEY`.
 5. Generate a random `AGENT_API_KEY` with at least 24 characters.
@@ -52,9 +52,14 @@ npm run dev
 npm run lint
 npm run typecheck
 npm test
+npm run test:coverage
 npm run contract:compile
 npm run contract:test
 ```
+
+CI runs typecheck, lint, coverage-gated unit tests, contract tests and a
+production-dependency audit for both packages. See [API.md](API.md) for the
+HTTP endpoint and authentication reference.
 
 ## Testnet deployment
 
@@ -67,10 +72,15 @@ npm run contract:test
 
 The active OwlPay testnet deployment uses the same 6-decimal USDC configured by GOAT Flow at `0x29d1ee93e9ecf6e50f309f498e40a6b42d352fa1`. Verify the address, symbol, and decimals on-chain before changing environments.
 
+Application quota is an API concern: an account may have at most five
+`PENDING` applications. Acceptance immediately frees that pending slot, and
+the escrow contract intentionally places no lifetime or concurrent cap on the
+number of bounties assigned to one developer.
+
 ## Review payment / x402 boundary
 
 `POST /api/bounties/:id/review-payment` creates an authenticated GOAT Flow DIRECT merchant order and returns HTTP 402 with the facilitator's machine-readable `PAYMENT-REQUIRED` payload. The browser pays that exact order through `goatflow-sdk` and confirms it with the returned order ID and transaction hash.
 
-The backend grants a review credit only after all three checks agree: GOAT Flow reports `PAYMENT_CONFIRMED` or `INVOICED`, the persisted facilitator proof matches the original order, and the GOAT Testnet3 receipt contains the exact payer/token/receiver/amount transfer. Order IDs and transaction hashes are replay-protected and persisted through migration `0007_goat_flow_review_orders.sql`.
+The backend grants a review credit only after all three checks agree: GOAT Flow reports `PAYMENT_CONFIRMED` or `INVOICED`, the persisted facilitator proof matches the original order, and the GOAT Testnet3 receipt contains the exact payer/token/receiver/amount transfer. Order IDs and transaction hashes are replay-protected and persisted through migration `0007_goat_flow_review_orders.sql`. Migration `0011_review_payment_conflict_lookup.sql` adds indexed historical hash/order lookups; the backend retains a read-only compatibility fallback while that migration is rolling out.
 
 Merchant credentials (`GOAT_FLOW_API_KEY` and `GOAT_FLOW_API_SECRET`) stay in the backend environment. Set `GOAT_FLOW_TOKEN_SYMBOL`, `GOAT_FLOW_TOKEN_ADDRESS`, and `GOAT_FLOW_TOKEN_DECIMALS` to the token configured for the merchant. On the current testnet deployment, the review and bounty escrow both use the same verified USDC contract.

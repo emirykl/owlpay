@@ -10,7 +10,10 @@ The contract and API are testnet software, not an audited production escrow.
 - settlement actions require a dedicated `SETTLEMENT_ROLE`; pause requires admin
 - submission hashes cannot be reused; only the assigned wallet can submit
 - only unassigned bounties can be cancelled; expired non-final bounties return the gross reward
+- the API limits each account to five pending applications; accepted assignments and completed bounty history are intentionally uncapped
 - review purchases are outside escrow, so no agent or merchant can withdraw bounty funds
+- historical review transaction and order IDs use indexed replay lookups; unique
+  database constraints remain the final guard for each active payment record
 
 ## Operational controls required before mainnet
 
@@ -20,3 +23,4 @@ The contract and API are testnet software, not an audited production escrow.
 - rate limits, durable job queue, webhook signature validation, and replay/idempotency monitoring
 - sandboxed ephemeral runners before executing any untrusted repository command
 - incident pause/runbook and tested signer-compromise recovery
+- chain-confirmation depth monitoring before treating testnet transfers as final
