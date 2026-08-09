@@ -22,11 +22,25 @@ import { SupabaseWalletIdentity } from './infrastructure/supabase-wallet-identit
 import { registerRoutes } from './http/routes.js';
 import { runAfterResponse } from './infrastructure/background-task.js';
 
+/**
+ * Rate limiting keys on `request.ip`, so that value has to be the caller rather
+ * than whatever sits in front of the app. Behind the Vercel proxy every request
+ * arrives from the same platform address, which would collapse all callers into
+ * one shared bucket; there `x-forwarded-for` carries the real client and exactly
+ * one hop is trusted. Anywhere else the socket address is already correct and
+ * the header is attacker supplied, so trusting it would let anyone rotate their
+ * apparent identity and bypass the limit entirely.
+ */
+export function resolveTrustProxy(runningOnVercel = process.env.VERCEL === '1') {
+  return runningOnVercel ? 1 : false;
+}
+
 export function buildApp(createFastify: typeof Fastify = Fastify) {
   const app = createFastify({
     logger: env.NODE_ENV !== 'test',
     genReqId: () => crypto.randomUUID(),
     requestIdHeader: 'x-request-id',
+    trustProxy: resolveTrustProxy(),
     bodyLimit: 1_048_576 // 1 MB
   });
   const supabase = env.PERSISTENCE_MODE === 'supabase'
