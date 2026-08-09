@@ -16,10 +16,10 @@ export default defineConfig({
       // This deliberately records the current UI-test debt instead of hiding
       // untested components. Raise these floors as component tests are added.
       thresholds: {
-        statements: 10,
-        branches: 74,
-        functions: 38,
-        lines: 10
+        statements: 30,
+        branches: 75,
+        functions: 40,
+        lines: 30
       }
     }
   }
