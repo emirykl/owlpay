@@ -13,6 +13,13 @@ export const metadata: Metadata = {
   }
 };
 
+/**
+ * The nonce in the policy `proxy.ts` sets only exists per request. A page
+ * rendered at build time would ship script tags stamped with no nonce, and the
+ * browser would then refuse to run them, so every route renders on request.
+ */
+export const dynamic = 'force-dynamic';
+
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
