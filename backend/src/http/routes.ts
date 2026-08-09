@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { BountyService } from '../application/bounty-service.js';
 import type { AuthVerifier } from '../application/auth.js';
@@ -49,7 +50,7 @@ export async function registerRoutes(
   }));
 
   app.get('/api/cron/resolve-due', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (request, reply) => {
-    if (!env.CRON_SECRET || request.headers.authorization !== `Bearer ${env.CRON_SECRET}`) {
+    if (!env.CRON_SECRET || !secretMatches(request.headers.authorization, `Bearer ${env.CRON_SECRET}`)) {
       return reply.code(401).send({ code: 'UNAUTHORIZED', message: !env.CRON_SECRET ? 'CRON_SECRET is not configured' : 'Cron authorization is required' });
     }
     const items = await service.resolveDueBounties();
@@ -195,13 +196,14 @@ export async function registerRoutes(
     return updated;
   });
 
-  app.post<{ Params: { id: string } }>('/api/bounties/:id/review/run', async (request) => {
+  // Each call spends a billable OpenAI review on the server's own API key.
+  app.post<{ Params: { id: string } }>('/api/bounties/:id/review/run', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (request) => {
     const actor = await auth.requireUser(request.headers.authorization);
     return service.runAutomatedReview(request.params.id, actor);
   });
 
-  app.post<{ Params: { id: string } }>('/api/bounties/:id/verification', async (request) => {
-    if (!env.AGENT_API_KEY || request.headers['x-agent-key'] !== env.AGENT_API_KEY) {
+  app.post<{ Params: { id: string } }>('/api/bounties/:id/verification', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request) => {
+    if (!env.AGENT_API_KEY || !secretMatches(readHeader(request.headers['x-agent-key']), env.AGENT_API_KEY)) {
       throw new DomainError(
         !env.AGENT_API_KEY ? 'AGENT_API_KEY is not configured' : 'Agent authorization is required',
         401,
@@ -230,5 +232,20 @@ export async function registerRoutes(
 }
 
 function readGitHubToken(value: string | string[] | undefined) {
+  return readHeader(value);
+}
+
+function readHeader(value: string | string[] | undefined) {
   return typeof value === 'string' ? value : '';
+}
+
+/**
+ * Constant-time secret comparison. Hashing first keeps the comparison length
+ * fixed, so neither the secret's length nor its matching prefix leaks through
+ * response timing.
+ */
+function secretMatches(candidate: string | undefined, expected: string) {
+  const a = createHash('sha256').update(candidate ?? '').digest();
+  const b = createHash('sha256').update(expected).digest();
+  return timingSafeEqual(a, b);
 }
