@@ -444,13 +444,7 @@ export class BountyService {
     if (Date.now() > new Date(bounty.maintainerReviewDeadline).getTime()) {
       throw new DomainError('The maintainer review period has ended; Owl AI resolution is now required', 409, 'MAINTAINER_REVIEW_EXPIRED');
     }
-    // VERIFYING counts as submitted: an agent review that was interrupted must
-    // never lock the maintainer out of their own bounty.
-    const awaitingReview = bounty.status === 'SUBMITTED' || bounty.status === 'VERIFYING';
-    const manualReviewReady = bounty.reviewPlan === 'NONE' && awaitingReview && bounty.submission;
-    const agentReviewReady = bounty.reviewPlan !== 'NONE' && bounty.status === 'READY_FOR_REVIEW' && bounty.decision;
-    const revisionFollowupReady = awaitingReview && bounty.revisionRequests.length > 0 && bounty.submission;
-    if (!manualReviewReady && !agentReviewReady && !revisionFollowupReady) throw new DomainError('This bounty is not ready for maintainer approval', 409, 'NOT_READY_FOR_REVIEW');
+    if (!awaitsMaintainerDecision(bounty)) throw new DomainError('This bounty is not ready for maintainer approval', 409, 'NOT_READY_FOR_REVIEW');
     const payoutTxHash = await this.settlement.approveAndRelease(
       requireOnchainId(bounty, this.settlement.writesEnabled),
       bounty.decision ? hashDecision(bounty.decision) : hashManualDecision(bounty, 'APPROVE'),
@@ -466,13 +460,7 @@ export class BountyService {
   async requestRevision(id: string, actor: AuthUser, input: RequestRevisionInput) {
     const bounty = await this.get(id);
     this.assertOwner(bounty, actor.id);
-    // VERIFYING counts as submitted: an agent review that was interrupted must
-    // never lock the maintainer out of their own bounty.
-    const awaitingReview = bounty.status === 'SUBMITTED' || bounty.status === 'VERIFYING';
-    const manualReviewReady = bounty.reviewPlan === 'NONE' && awaitingReview && bounty.submission;
-    const agentReviewReady = bounty.reviewPlan !== 'NONE' && bounty.status === 'READY_FOR_REVIEW' && bounty.decision;
-    const revisionFollowupReady = awaitingReview && bounty.revisionRequests.length > 0 && bounty.submission;
-    if (!manualReviewReady && !agentReviewReady && !revisionFollowupReady) throw new DomainError('This bounty is not ready for maintainer review', 409, 'NOT_READY_FOR_REVIEW');
+    if (!awaitsMaintainerDecision(bounty)) throw new DomainError('This bounty is not ready for maintainer review', 409, 'NOT_READY_FOR_REVIEW');
     if (bounty.revisionRequests.length >= MAX_REVISIONS) {
       throw new DomainError('This bounty has reached its two-revision limit', 409, 'MAXIMUM_REVISIONS_REACHED');
     }
@@ -556,6 +544,23 @@ export class BountyService {
     if (!bounty.ownerUserId || bounty.ownerUserId !== actorUserId) throw new DomainError('Only the bounty owner can perform this action', 403, 'FORBIDDEN');
   }
 
+}
+
+/**
+ * Whether the maintainer may now approve or send the work back. Approving and
+ * requesting a revision are the two halves of one verdict, so they have to read
+ * the same state: if these ever disagree a bounty can reach a point where the
+ * maintainer can reject but not accept, or the reverse.
+ *
+ * VERIFYING counts as submitted here, because an agent review that died partway
+ * must never lock the maintainer out of their own bounty.
+ */
+function awaitsMaintainerDecision(bounty: Bounty) {
+  const awaitingReview = bounty.status === 'SUBMITTED' || bounty.status === 'VERIFYING';
+  const manualReviewReady = bounty.reviewPlan === 'NONE' && awaitingReview && bounty.submission;
+  const agentReviewReady = bounty.reviewPlan !== 'NONE' && bounty.status === 'READY_FOR_REVIEW' && bounty.decision;
+  const revisionFollowupReady = awaitingReview && bounty.revisionRequests.length > 0 && bounty.submission;
+  return Boolean(manualReviewReady || agentReviewReady || revisionFollowupReady);
 }
 
 function normalizeRepository(value: string) {
