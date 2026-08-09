@@ -68,24 +68,17 @@ export function buildApp(createFastify: typeof Fastify = Fastify) {
 
   app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
 
-  const allowedOrigins = env.FRONTEND_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean);
+  const allowedOrigins = new Set(env.FRONTEND_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean));
   app.register(cors, {
+    // Exact match only. Any `<name>.vercel.app` can be registered by anyone, so
+    // pattern matching on that domain — prefix, suffix or substring — is always
+    // forgeable: an allowlist entry of `owlpay.vercel.app` would otherwise also
+    // admit an attacker-owned `owlpay-evil.vercel.app`. Preview deployments that
+    // need API access must be listed in FRONTEND_ORIGIN explicitly.
     origin: (origin, callback) => {
-      // Allow requests with no origin (server-to-server, curl, mobile)
+      // Requests with no Origin header are server-to-server or curl, not browsers.
       if (!origin) return callback(null, true);
-      // Check exact match against configured origins
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      // Allow Vercel preview deployment URLs matching configured project prefixes
-      if (allowedOrigins.some((allowed) => {
-        try {
-          const host = new URL(allowed).hostname;
-          if (!host.endsWith('.vercel.app')) return false;
-          const projectPrefix = host.replace('.vercel.app', '');
-          const originHost = new URL(origin).hostname;
-          return originHost.endsWith('.vercel.app') && originHost.includes(projectPrefix);
-        } catch { /* ignore */ }
-        return false;
-      })) return callback(null, true);
+      if (allowedOrigins.has(origin)) return callback(null, true);
       callback(new Error('CORS: origin not allowed'), false);
     },
     methods: ['GET', 'POST'],
