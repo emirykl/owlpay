@@ -134,6 +134,93 @@ describe('OwlPayBounty', function () {
     await expect(fixture.contract.connect(fixture.settlement).releasePayment(1))
       .to.changeTokenBalance(fixture.token, fixture.developer, 19_400_000n);
   });
+
+  it('allows one developer to hold more than five accepted bounties', async function () {
+    const fixture = await deployFixture();
+    const latest = await ethers.provider.getBlock('latest');
+    const deadline = Number(latest.timestamp) + 3600;
+    for (let index = 1; index <= 6; index += 1) {
+      await fixture.contract.connect(fixture.owner).createBounty(10_000_000n, deadline, ethers.id(`task-${index}`));
+      await fixture.contract.connect(fixture.owner).assignDeveloper(index, fixture.developer.address);
+    }
+    expect((await fixture.contract.getBounty(6)).developer).to.equal(fixture.developer.address);
+  });
+
+  it('settles a bounty escalated to human review instead of stranding the escrow', async function () {
+    const fixture = await deployFixture();
+    const latest = await ethers.provider.getBlock('latest');
+    const deadline = Number(latest.timestamp) + 3600;
+    await fixture.contract.connect(fixture.owner).createBounty(20_000_000n, deadline, ethers.id('task'));
+    await fixture.contract.connect(fixture.owner).assignDeveloper(1, fixture.developer.address);
+    await fixture.contract.connect(fixture.developer).submitWork(1, ethers.id('submission'));
+    await fixture.contract.connect(fixture.settlement).requestHumanReview(1, ethers.id('escalation'));
+
+    await ethers.provider.send('evm_setNextBlockTimestamp', [deadline + 7 * 24 * 60 * 60 + 1]);
+    await ethers.provider.send('evm_mine');
+    await expect(fixture.contract.connect(fixture.settlement).resolveReviewTimeout(1, ethers.id('timeout'), false))
+      .to.changeTokenBalance(fixture.token, fixture.owner, 20_000_000n);
+  });
+
+  it('caps the bounty deadline so escrow cannot be held indefinitely', async function () {
+    const fixture = await deployFixture();
+    const latest = await ethers.provider.getBlock('latest');
+    const tooFar = Number(latest.timestamp) + 31 * 24 * 60 * 60;
+    await expect(fixture.contract.connect(fixture.owner).createBounty(20_000_000n, tooFar, ethers.id('task')))
+      .to.be.revertedWithCustomError(fixture.contract, 'InvalidDeadline');
+  });
+
+  it('lets an admin unwind an approved bounty only long after the review window', async function () {
+    const fixture = await deployFixture();
+    const latest = await ethers.provider.getBlock('latest');
+    const deadline = Number(latest.timestamp) + 3600;
+    await fixture.contract.connect(fixture.owner).createBounty(20_000_000n, deadline, ethers.id('task'));
+    await fixture.contract.connect(fixture.owner).assignDeveloper(1, fixture.developer.address);
+    await fixture.contract.connect(fixture.developer).submitWork(1, ethers.id('submission'));
+    await fixture.contract.connect(fixture.settlement).approveSubmission(1, ethers.id('approval'));
+
+    await expect(fixture.contract.connect(fixture.admin).rescueStuckBounty(1))
+      .to.be.revertedWithCustomError(fixture.contract, 'DeadlineNotPassed');
+
+    const reviewDeadline = deadline + 7 * 24 * 60 * 60;
+    await ethers.provider.send('evm_setNextBlockTimestamp', [reviewDeadline + 30 * 24 * 60 * 60 + 1]);
+    await ethers.provider.send('evm_mine');
+    await expect(fixture.contract.connect(fixture.outsider).rescueStuckBounty(1)).to.be.reverted;
+    // Already approved, so the rescue honours the approval instead of letting an
+    // admin redirect the reward back to the bounty owner.
+    await expect(fixture.contract.connect(fixture.admin).rescueStuckBounty(1))
+      .to.changeTokenBalances(fixture.token, [fixture.developer, fixture.treasury, fixture.owner], [19_400_000n, 600_000n, 0n]);
+  });
+
+  it('keeps the approve and revise paths open after an escalation to human review', async function () {
+    const fixture = await deployFixture();
+    const latest = await ethers.provider.getBlock('latest');
+    const deadline = Number(latest.timestamp) + 3600;
+    await fixture.contract.connect(fixture.owner).createBounty(20_000_000n, deadline, ethers.id('task'));
+    await fixture.contract.connect(fixture.owner).assignDeveloper(1, fixture.developer.address);
+    await fixture.contract.connect(fixture.developer).submitWork(1, ethers.id('submission'));
+    await fixture.contract.connect(fixture.settlement).requestHumanReview(1, ethers.id('escalation'));
+
+    // Escalating must not strip the ordinary verdicts from the bounty.
+    await fixture.contract.connect(fixture.settlement).approveSubmission(1, ethers.id('approval'));
+    expect((await fixture.contract.getBounty(1)).status).to.equal(6n);
+    await expect(fixture.contract.connect(fixture.settlement).releasePayment(1))
+      .to.changeTokenBalance(fixture.token, fixture.developer, 19_400_000n);
+  });
+
+  it('refunds the owner when rescuing a bounty that was never approved', async function () {
+    const fixture = await deployFixture();
+    const latest = await ethers.provider.getBlock('latest');
+    const deadline = Number(latest.timestamp) + 3600;
+    await fixture.contract.connect(fixture.owner).createBounty(20_000_000n, deadline, ethers.id('task'));
+    await fixture.contract.connect(fixture.owner).assignDeveloper(1, fixture.developer.address);
+    await fixture.contract.connect(fixture.developer).submitWork(1, ethers.id('submission'));
+    await fixture.contract.connect(fixture.settlement).requestHumanReview(1, ethers.id('escalation'));
+
+    await ethers.provider.send('evm_setNextBlockTimestamp', [deadline + 7 * 24 * 60 * 60 + 30 * 24 * 60 * 60 + 1]);
+    await ethers.provider.send('evm_mine');
+    await expect(fixture.contract.connect(fixture.admin).rescueStuckBounty(1))
+      .to.changeTokenBalance(fixture.token, fixture.owner, 20_000_000n);
+  });
 });
 
 describe('OwlPayTestUSDC', function () {
