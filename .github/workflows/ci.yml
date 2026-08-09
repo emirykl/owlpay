@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    env:
+      # The env schema refuses to load without these; the values are inert
+      # placeholders so CI never needs a real credential.
+      NODE_ENV: test
+      PERSISTENCE_MODE: memory
+      ENABLE_TESTNET_WRITES: 'false'
+      ENABLE_RESOLUTION_WORKER: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - run: npm run typecheck
+        working-directory: backend
+      - run: npm run lint
+        working-directory: backend
+      - run: npm run test:coverage
+        working-directory: backend
+      - name: Contract tests
+        run: npx hardhat test
+        working-directory: backend
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=moderate
+        working-directory: backend
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run typecheck
+        working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+      - run: npm run test:coverage
+        working-directory: frontend
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=moderate
+        working-directory: frontend
