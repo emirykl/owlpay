@@ -65,9 +65,9 @@ export class SupabaseApplicationRepository implements ApplicationRepository {
     if (accepted.error) throw new DomainError(`Supabase application acceptance failed: ${accepted.error.message}`, 500, 'DATABASE_ERROR');
   }
 
-  async countActiveByDeveloper(developerUserId: string) {
-    const { count, error } = await this.client.from('bounty_applications').select('*', { count: 'exact', head: true }).eq('developer_user_id', developerUserId).in('status', ['PENDING', 'ACCEPTED']);
-    if (error) throw new DomainError(`Supabase active application count failed: ${error.message}`, 500, 'DATABASE_ERROR');
+  async countPendingByDeveloper(developerUserId: string) {
+    const { count, error } = await this.client.from('bounty_applications').select('*', { count: 'exact', head: true }).eq('developer_user_id', developerUserId).eq('status', 'PENDING');
+    if (error) throw new DomainError(`Supabase pending application count failed: ${error.message}`, 500, 'DATABASE_ERROR');
     return count ?? 0;
   }
 

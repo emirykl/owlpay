@@ -41,9 +41,9 @@ export class InMemoryApplicationRepository implements ApplicationRepository {
     }
   }
 
-  async countActiveByDeveloper(developerUserId: string) {
+  async countPendingByDeveloper(developerUserId: string) {
     return [...this.applications.values()].filter(
-      (item) => item.developerUserId === developerUserId && (item.status === 'PENDING' || item.status === 'ACCEPTED')
+      (item) => item.developerUserId === developerUserId && item.status === 'PENDING'
     ).length;
   }
 

@@ -121,6 +121,40 @@ const reviewConfig = {
 };
 
 describe('bounty application and assignment flow', () => {
+  it('fails closed when a legacy draft has no recorded owner', async () => {
+    const repository = new InMemoryBountyRepository();
+    const payment = createPaymentHarness();
+    const service = new BountyService(
+      repository,
+      new InMemoryApplicationRepository(),
+      github,
+      new VerificationPolicy(),
+      settlement,
+      payment.gateway,
+      payment.verifier,
+      reviewConfig
+    );
+    const draft = await service.create({
+      title: 'Legacy ownerless bounty',
+      description: 'A legacy record must not bypass the funding ownership check.',
+      repositoryUrl: 'https://github.com/owlpay/demo',
+      ownerAddress: '0x0000000000000000000000000000000000000001',
+      rewardAmount: '20',
+      reviewPlan: 'NONE',
+      deadline: new Date(Date.now() + 86_400_000).toISOString(),
+      criteria: [{ id: 'ownership', description: 'Funding remains owner-only', mandatory: true, method: 'manual' }]
+    }, owner, 'github-token');
+    const { ownerUserId: _legacyOwner, ...ownerlessDraft } = draft;
+    await repository.save(ownerlessDraft);
+
+    await expect(service.markFunded(
+      draft.id,
+      '1',
+      `0x${'1'.repeat(64)}`,
+      owner.id
+    )).rejects.toMatchObject({ code: 'FORBIDDEN', statusCode: 403 });
+  });
+
   it('stores maintainer feedback across a manual revision cycle before approval', async () => {
     const payment = createPaymentHarness();
     const service = new BountyService(
@@ -256,6 +290,69 @@ describe('bounty application and assignment flow', () => {
     }, developers[0]!)).rejects.toMatchObject({ code: 'BOUNTY_EXPIRED' });
   });
 
+  it('limits only pending applications and allows more than five accepted bounties', async () => {
+    const repository = new InMemoryBountyRepository();
+    const applications = new InMemoryApplicationRepository();
+    const payment = createPaymentHarness();
+    const service = new BountyService(
+      repository,
+      applications,
+      github,
+      new VerificationPolicy(),
+      settlement,
+      payment.gateway,
+      payment.verifier,
+      reviewConfig
+    );
+    const bounties = [];
+
+    for (let index = 1; index <= 7; index += 1) {
+      const draft = await service.create({
+        title: `Pending quota bounty ${index}`,
+        description: 'This bounty verifies that only pending applications consume quota.',
+        repositoryUrl: 'https://github.com/owlpay/demo',
+        ownerAddress: '0x0000000000000000000000000000000000000001',
+        rewardAmount: '20',
+        reviewPlan: 'NONE',
+        deadline: new Date(Date.now() + 86_400_000).toISOString(),
+        criteria: [{ id: `quota-${index}`, description: 'Pending quota remains enforced', mandatory: true, method: 'manual' }]
+      }, owner, 'github-token');
+      await service.markFunded(draft.id, String(index), `0x${String(index).repeat(64)}`, owner.id);
+      bounties.push(draft);
+    }
+
+    const pending = [];
+    for (const bounty of bounties.slice(0, 5)) {
+      pending.push(await service.apply(bounty.id, {
+        message: 'I can complete this bounty and provide the requested evidence.',
+        developerAddress: '0x0000000000000000000000000000000000000002'
+      }, developers[0]!));
+    }
+    await expect(service.apply(bounties[5]!.id, {
+      message: 'This sixth pending application must be rejected by the quota.',
+      developerAddress: '0x0000000000000000000000000000000000000002'
+    }, developers[0]!)).rejects.toMatchObject({ code: 'MAX_PENDING_APPLICATIONS_REACHED' });
+
+    await service.assign(bounties[0]!.id, pending[0]!.id, owner);
+    expect(await service.getApplicationSlots(developers[0]!)).toMatchObject({ pending: 4, maxPending: 5, remaining: 1 });
+    pending.push(await service.apply(bounties[5]!.id, {
+      message: 'An accepted bounty freed one pending application slot for me.',
+      developerAddress: '0x0000000000000000000000000000000000000002'
+    }, developers[0]!));
+
+    for (let index = 1; index < pending.length; index += 1) {
+      await service.assign(bounties[index]!.id, pending[index]!.id, owner);
+    }
+    const seventh = await service.apply(bounties[6]!.id, {
+      message: 'Accepted bounty history has no maximum and does not consume quota.',
+      developerAddress: '0x0000000000000000000000000000000000000002'
+    }, developers[0]!);
+    await service.assign(bounties[6]!.id, seventh.id, owner);
+
+    expect(await service.getApplicationSlots(developers[0]!)).toMatchObject({ pending: 0, maxPending: 5, remaining: 5 });
+    expect((await service.listMyApplications(developers[0]!)).filter(({ application }) => application.status === 'ACCEPTED')).toHaveLength(7);
+  });
+
   it('accepts multiple applications, assigns one developer, verifies work, and releases payment after maintainer approval', async () => {
     const payment = createPaymentHarness();
     const service = new BountyService(
@@ -314,13 +411,138 @@ describe('bounty application and assignment flow', () => {
     expect(await service.approve(draft.id, owner)).toMatchObject({ status: 'PAID', payoutTxHash: `0x${'9'.repeat(64)}` });
   });
 
-  it('automatically pays a qualifying submission only after the fixed maintainer window ends', async () => {
-    const repository = new InMemoryBountyRepository();
-    const service = new BountyService(repository, new InMemoryApplicationRepository(), github, new VerificationPolicy(), settlement);
+  it('automatically pays a merged submission only after the fixed maintainer window ends', async () => {
+    // The pull request is open at submission time and merged by the maintainer
+    // afterwards, which is what the timeout resolver later observes.
+    let merged = false;
+    const mergedGithub: GitHubEvidenceProvider = {
+      ...github,
+      async getPullRequest(pullRequestUrl) {
+        const evidence = await github.getPullRequest(pullRequestUrl);
+        return merged ? { ...evidence, merged: true, state: 'closed' } : evidence;
+      }
+    };
+    const service = new BountyService(new InMemoryBountyRepository(), new InMemoryApplicationRepository(), mergedGithub, new VerificationPolicy(), settlement);
     const deadline = new Date(Date.now() + 86_400_000).toISOString();
     const draft = await service.create({
       title: 'Resolve an unanswered review',
-      description: 'The Owl AI fallback resolves qualifying work after maintainer inactivity.',
+      description: 'A merged pull request settles after maintainer inactivity.',
+      repositoryUrl: 'https://github.com/owlpay/demo',
+      ownerAddress: '0x0000000000000000000000000000000000000001',
+      rewardAmount: '20', reviewPlan: 'STANDARD', deadline,
+      criteria: [{ id: 'health', description: 'GET /health returns HTTP 200', mandatory: true, method: 'ci' }]
+    }, owner, 'github-token');
+    await service.markFunded(draft.id, '1', `0x${'1'.repeat(64)}`, owner.id);
+    const application = await service.apply(draft.id, {
+      message: 'I can complete this bounty with tests and supporting evidence.',
+      developerAddress: '0x0000000000000000000000000000000000000003'
+    }, developers[1]!);
+    await service.assign(draft.id, application.id, owner);
+    await service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: application.developerAddress }, developers[1]!);
+
+    expect(await service.resolveDueBounties(new Date(deadline).getTime() + 6 * 86_400_000)).toEqual([]);
+    merged = true;
+    await service.resolveDueBounties(new Date(deadline).getTime() + 7 * 86_400_000 + 1);
+    expect(await service.get(draft.id)).toMatchObject({ status: 'PAID', timeoutResolution: 'AUTO_APPROVED', payoutTxHash: `0x${'7'.repeat(64)}` });
+  });
+
+  it('never releases escrow on an agent report alone when the pull request is not merged', async () => {
+    // Regression guard: a pull request diff is attacker-controlled input to the
+    // review model, so a glowing report must not be able to move funds by itself.
+    const glowingGithub: GitHubEvidenceProvider = {
+      ...github,
+      async reviewPullRequest() {
+        return {
+          confidence: 1,
+          taskAssessment: { status: 'FULLY_MET' as const, score: 100, evidence: ['file:src/index.ts'], summary: 'Every requested change is implemented.' },
+          criterionResults: [{ criterionId: 'health', status: 'PASSED' as const, evidence: ['file:src/index.ts'], summary: 'Endpoint and tests pass.' }],
+          blockingIssues: []
+        };
+      }
+    };
+    const service = new BountyService(new InMemoryBountyRepository(), new InMemoryApplicationRepository(), glowingGithub, new VerificationPolicy(), settlement);
+    const deadline = new Date(Date.now() + 86_400_000).toISOString();
+    const draft = await service.create({
+      title: 'Refuse an agent-only payout',
+      description: 'A perfect agent report still requires a human or a merge to settle.',
+      repositoryUrl: 'https://github.com/owlpay/demo',
+      ownerAddress: '0x0000000000000000000000000000000000000001',
+      rewardAmount: '20', reviewPlan: 'SECURITY', deadline,
+      criteria: [{ id: 'health', description: 'GET /health returns HTTP 200', mandatory: true, method: 'ci' }]
+    }, owner, 'github-token');
+    await service.markFunded(draft.id, '1', `0x${'1'.repeat(64)}`, owner.id);
+    const application = await service.apply(draft.id, {
+      message: 'I can complete this bounty with tests and supporting evidence.',
+      developerAddress: '0x0000000000000000000000000000000000000003'
+    }, developers[1]!);
+    await service.assign(draft.id, application.id, owner);
+    await service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: application.developerAddress }, developers[1]!);
+    await service.resolveDueBounties(new Date(deadline).getTime() + 7 * 86_400_000 + 1);
+
+    const resolved = await service.get(draft.id);
+    expect(resolved).toMatchObject({ status: 'HUMAN_REVIEW', timeoutResolution: 'INCONCLUSIVE' });
+    expect(resolved.payoutTxHash).toBeUndefined();
+  });
+
+  it('does not lock the maintainer out when an agent review is interrupted', async () => {
+    // The review claim marks the bounty VERIFYING before the model call. If the
+    // process dies mid-call the claim survives, so it must not become a trap.
+    let attempts = 0;
+    const flakyGithub: GitHubEvidenceProvider = {
+      ...github,
+      async reviewPullRequest(...args) {
+        attempts += 1;
+        if (attempts === 1) throw new Error('OpenAI request timed out');
+        return github.reviewPullRequest(...args);
+      }
+    };
+    const repository = new InMemoryBountyRepository();
+    const service = new BountyService(repository, new InMemoryApplicationRepository(), flakyGithub, new VerificationPolicy(), settlement);
+    const deadline = new Date(Date.now() + 86_400_000).toISOString();
+    const draft = await service.create({
+      title: 'Survive an interrupted review',
+      description: 'A stuck review claim must not block maintainer approval.',
+      repositoryUrl: 'https://github.com/owlpay/demo',
+      ownerAddress: '0x0000000000000000000000000000000000000001',
+      rewardAmount: '20', reviewPlan: 'STANDARD', deadline,
+      criteria: [{ id: 'health', description: 'GET /health returns HTTP 200', mandatory: true, method: 'ci' }]
+    }, owner, 'github-token');
+    await service.markFunded(draft.id, '1', `0x${'1'.repeat(64)}`, owner.id);
+    // The review package is already paid for; this test is about the claim, not
+    // the purchase, which the payment harness covers elsewhere.
+    await repository.save({ ...(await service.get(draft.id)), reviewPaymentStatus: 'PAID', reviewPaidAmount: '1' });
+    const application = await service.apply(draft.id, {
+      message: 'I can complete this bounty with tests and supporting evidence.',
+      developerAddress: '0x0000000000000000000000000000000000000003'
+    }, developers[1]!);
+    await service.assign(draft.id, application.id, owner);
+    await service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: application.developerAddress }, developers[1]!);
+
+    await expect(service.runAutomatedReview(draft.id, owner)).rejects.toThrow('OpenAI request timed out');
+    // Simulate a process killed mid-review: the claim is left behind uncleaned.
+    await repository.save({ ...(await service.get(draft.id)), status: 'VERIFYING' });
+
+    // An unattended retry must not steal a claim that may still be running...
+    await expect(service.runPaidReview(draft.id)).rejects.toMatchObject({ code: 'SUBMISSION_REQUIRED' });
+    // ...but the maintainer asking for it explicitly takes the claim over.
+    expect(await service.runAutomatedReview(draft.id, owner)).toMatchObject({ status: 'READY_FOR_REVIEW' });
+    expect(await service.approve(draft.id, owner)).toMatchObject({ status: 'PAID' });
+  });
+
+  it('escalates a manual-review bounty instead of substituting an agent verdict', async () => {
+    let reviewCalls = 0;
+    const countingGithub: GitHubEvidenceProvider = {
+      ...github,
+      async reviewPullRequest(...args) {
+        reviewCalls += 1;
+        return github.reviewPullRequest(...args);
+      }
+    };
+    const service = new BountyService(new InMemoryBountyRepository(), new InMemoryApplicationRepository(), countingGithub, new VerificationPolicy(), settlement);
+    const deadline = new Date(Date.now() + 86_400_000).toISOString();
+    const draft = await service.create({
+      title: 'Respect the manual review choice',
+      description: 'A maintainer who opted out of agent review keeps that choice on timeout.',
       repositoryUrl: 'https://github.com/owlpay/demo',
       ownerAddress: '0x0000000000000000000000000000000000000001',
       rewardAmount: '20', reviewPlan: 'NONE', deadline,
@@ -333,10 +555,10 @@ describe('bounty application and assignment flow', () => {
     }, developers[1]!);
     await service.assign(draft.id, application.id, owner);
     await service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: application.developerAddress }, developers[1]!);
-
-    expect(await service.resolveDueBounties(new Date(deadline).getTime() + 6 * 86_400_000)).toEqual([]);
     await service.resolveDueBounties(new Date(deadline).getTime() + 7 * 86_400_000 + 1);
-    expect(await service.get(draft.id)).toMatchObject({ status: 'PAID', timeoutResolution: 'AUTO_APPROVED', payoutTxHash: `0x${'7'.repeat(64)}` });
+
+    expect(reviewCalls).toBe(0);
+    expect(await service.get(draft.id)).toMatchObject({ status: 'HUMAN_REVIEW', timeoutResolution: 'INCONCLUSIVE' });
   });
 
   it('holds a low-confidence timeout decision for appeal instead of refunding immediately', async () => {
@@ -353,7 +575,7 @@ describe('bounty application and assignment flow', () => {
       description: 'Low confidence work remains escrowed during the contributor appeal window.',
       repositoryUrl: 'https://github.com/owlpay/demo',
       ownerAddress: '0x0000000000000000000000000000000000000001',
-      rewardAmount: '20', reviewPlan: 'NONE', deadline,
+      rewardAmount: '20', reviewPlan: 'STANDARD', deadline,
       criteria: [{ id: 'health', description: 'GET /health returns HTTP 200', mandatory: true, method: 'ci' }]
     }, owner, 'github-token');
     await service.markFunded(draft.id, '1', `0x${'1'.repeat(64)}`, owner.id);

@@ -1,9 +1,28 @@
-import type { Bounty, BountyApplication, BrowserReviewPaymentOrder, Criterion, ReviewPlan, VerificationInput } from '../domain/schemas.js';
+import type { Bounty, BountyApplication, BountyStatus, BrowserReviewPaymentOrder, Criterion, ReviewPlan, VerificationInput } from '../domain/schemas.js';
 
 export interface BountyRepository {
-  list(): Promise<Bounty[]>;
+  /** Marketplace listing, newest first, capped so the query can never grow unbounded. */
+  list(limit: number): Promise<Bounty[]>;
+  /**
+   * Only the bounties whose contributor, maintainer or appeal deadline has
+   * elapsed. Filtering in the database keeps the scheduled resolver from
+   * reading the whole table on every run.
+   */
+  listResolvable(now: Date): Promise<Bounty[]>;
+  /**
+   * Whether this settlement transaction or payment order already bought a
+   * review. The unique indexes from migrations 0004 and 0007 are the actual
+   * guarantee; this reports the conflict before any on-chain work is done.
+   */
+  findReviewPaymentConflict(txHash: string, orderId: string, excludeBountyId: string): Promise<boolean>;
   get(id: string): Promise<Bounty | undefined>;
   save(bounty: Bounty): Promise<void>;
+  /**
+   * Compare-and-set write. Persists the bounty only while the stored row still
+   * carries `expectedStatus`, and reports whether the write won the race. Used
+   * to claim a state transition before an expensive or billable side effect.
+   */
+  saveIfStatus(bounty: Bounty, expectedStatus: BountyStatus): Promise<boolean>;
 }
 
 export interface ApplicationRepository {
@@ -14,7 +33,7 @@ export interface ApplicationRepository {
   countByBounties(bountyIds: string[]): Promise<Record<string, number>>;
   save(application: BountyApplication): Promise<void>;
   resolveAssignment(bountyId: string, acceptedApplicationId: string): Promise<void>;
-  countActiveByDeveloper(developerUserId: string): Promise<number>;
+  countPendingByDeveloper(developerUserId: string): Promise<number>;
   withdraw(applicationId: string): Promise<void>;
 }
 

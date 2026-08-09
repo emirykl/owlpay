@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { RESOLVABLE_STATUSES } from '../application/resolution-window.js';
 import type { BountyRepository } from '../application/ports.js';
 import type { AgentDecision, Bounty, BountyStatus, BrowserReviewPaymentOrder, Criterion, FlowOrderStatus, ReviewPaymentStatus, ReviewPlan, RevisionRequest, Submission, TimeoutResolution } from '../domain/schemas.js';
 import { DomainError } from '../domain/errors.js';
@@ -58,10 +59,49 @@ interface BountyRow {
 export class SupabaseBountyRepository implements BountyRepository {
   constructor(private readonly client: SupabaseClient) {}
 
-  async list(): Promise<Bounty[]> {
-    const { data, error } = await this.client.from('bounties').select('*').order('created_at', { ascending: false });
+  async list(limit: number): Promise<Bounty[]> {
+    const { data, error } = await this.client
+      .from('bounties')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
     if (error) throw new DomainError(`Supabase list failed: ${error.message}`, 500, 'DATABASE_ERROR');
     return (data as BountyRow[]).map(fromRow);
+  }
+
+  async listResolvable(now: Date): Promise<Bounty[]> {
+    const timestamp = now.toISOString();
+    const { data, error } = await this.client
+      .from('bounties')
+      .select('*')
+      .in('status', RESOLVABLE_STATUSES)
+      .or(`contributor_deadline.lt.${timestamp},maintainer_review_deadline.lt.${timestamp},appeal_deadline.lt.${timestamp}`);
+    if (error) throw new DomainError(`Supabase list failed: ${error.message}`, 500, 'DATABASE_ERROR');
+    return (data as BountyRow[]).map(fromRow);
+  }
+
+  async findReviewPaymentConflict(txHash: string, orderId: string, excludeBountyId: string): Promise<boolean> {
+    const hash = txHash.toLowerCase();
+    const { data: indexedResult, error: indexedError } = await this.client.rpc('find_review_payment_conflict', {
+      p_tx_hash: hash,
+      p_order_id: orderId,
+      p_exclude_bounty_id: excludeBountyId
+    });
+    if (!indexedError) return indexedResult === true;
+    if (!isMissingConflictLookup(indexedError)) {
+      throw new DomainError(`Supabase payment conflict lookup failed: ${indexedError.message}`, 500, 'DATABASE_ERROR');
+    }
+
+    // Deployment-safe fallback while migration 0011 reaches an environment.
+    // Selecting only rule inputs avoids transferring the large evidence blobs.
+    const { data, error } = await this.client
+      .from('bounties')
+      .select('id,review_payment_tx_hash,review_payment_tx_hashes,review_payment_order_ids');
+    if (error) throw new DomainError(`Supabase list failed: ${error.message}`, 500, 'DATABASE_ERROR');
+    return (data as Array<Pick<BountyRow, 'id' | 'review_payment_tx_hash' | 'review_payment_tx_hashes' | 'review_payment_order_ids'>>).some((row) =>
+      row.review_payment_tx_hash?.toLowerCase() === hash
+      || (row.review_payment_tx_hashes ?? []).some((value) => value.toLowerCase() === hash)
+      || (row.id !== excludeBountyId && (row.review_payment_order_ids ?? []).includes(orderId)));
   }
 
   async get(id: string): Promise<Bounty | undefined> {
@@ -81,10 +121,40 @@ export class SupabaseBountyRepository implements BountyRepository {
       delete legacyRow.escrow_contract_address;
       const { error: legacyError } = await this.client.from('bounties').upsert(legacyRow, { onConflict: 'id' });
       if (!legacyError) return;
-      throw new DomainError(`Supabase save failed: ${legacyError.message}`, 500, 'DATABASE_ERROR');
+      throw saveError(legacyError);
     }
-    throw new DomainError(`Supabase save failed: ${error.message}`, 500, 'DATABASE_ERROR');
+    throw saveError(error);
   }
+
+  async saveIfStatus(bounty: Bounty, expectedStatus: Bounty['status']): Promise<boolean> {
+    const row = toRow(bounty);
+    const { data, error } = await this.client
+      .from('bounties')
+      .update(row)
+      .eq('id', bounty.id)
+      .eq('status', expectedStatus)
+      .select('id')
+      .maybeSingle();
+    if (error) throw saveError(error);
+    return Boolean(data);
+  }
+}
+
+function isMissingConflictLookup(error: { code?: string; message: string }) {
+  return error.code === 'PGRST202'
+    || error.message.includes('find_review_payment_conflict');
+}
+
+/**
+ * The payment replay indexes added in migrations 0004 and 0007 are the real
+ * guarantee against reusing a settlement transaction. Surface a violation as a
+ * conflict the caller can act on instead of an opaque 500.
+ */
+function saveError(error: { code?: string; message: string }) {
+  if (error.code === '23505') {
+    return new DomainError('This transaction or payment order is already recorded on another bounty', 409, 'PAYMENT_ALREADY_USED');
+  }
+  return new DomainError(`Supabase save failed: ${error.message}`, 500, 'DATABASE_ERROR');
 }
 
 function fromRow(row: BountyRow): Bounty {
@@ -168,8 +238,8 @@ function toRow(bounty: Bounty) {
     review_price: bounty.reviewPrice,
     review_paid_amount: bounty.reviewPaidAmount,
     review_payment_status: bounty.reviewPaymentStatus,
-    review_payment_tx_hash: bounty.reviewPaymentTxHash ?? null,
-    review_payment_tx_hashes: bounty.reviewPaymentTxHashes,
+    review_payment_tx_hash: bounty.reviewPaymentTxHash?.toLowerCase() ?? null,
+    review_payment_tx_hashes: bounty.reviewPaymentTxHashes.map((hash) => hash.toLowerCase()),
     review_payment_intent_id: bounty.reviewPaymentIntentId ?? null,
     review_payment_order_id: bounty.reviewPaymentOrderId ?? null,
     review_payment_order_ids: bounty.reviewPaymentOrderIds,
@@ -178,7 +248,7 @@ function toRow(bounty: Bounty) {
     review_payment_order_status: bounty.reviewPaymentOrderStatus ?? null,
     review_payment_order: bounty.reviewPaymentOrder ?? null,
     review_payment_proof: bounty.reviewPaymentProof ?? null,
-    review_payment_pending_tx_hash: bounty.reviewPaymentPendingTxHash ?? null,
+    review_payment_pending_tx_hash: bounty.reviewPaymentPendingTxHash?.toLowerCase() ?? null,
     review_paid_at: bounty.reviewPaidAt ?? null,
     review_consumed_at: bounty.reviewConsumedAt ?? null,
     revision_requests: bounty.revisionRequests,
