@@ -268,5 +268,5 @@ export const owlpayApi = {
     method: 'POST', body: JSON.stringify({ refundTxHash })
   }),
   withdrawApplication: (applicationId: string) => api<BountyApplication>(`/api/applications/${applicationId}/withdraw`, { method: 'POST' }),
-  getApplicationSlots: () => api<{ active: number; max: number; remaining: number }>('/api/applications/slots')
+  getApplicationSlots: () => api<{ pending: number; maxPending: number; remaining: number; active?: number; max?: number }>('/api/applications/slots')
 };

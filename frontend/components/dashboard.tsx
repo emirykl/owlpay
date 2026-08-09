@@ -83,6 +83,10 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
   const network = useQuery({ queryKey: ['network'], queryFn: owlpayApi.network, refetchInterval: 30_000, retry: 1 });
   const items = useMemo(() => bounties.data?.items ?? [], [bounties.data?.items]);
   const publicItems = useMemo(() => items.filter((item) => item.status !== 'DRAFT'), [items]);
+  const acceptedApplicationCount = useMemo(
+    () => myApplications.data?.items.filter(({ application }) => application.status === 'ACCEPTED').length ?? 0,
+    [myApplications.data?.items]
+  );
   const repositories = useMemo(() => Array.from(new Map(publicItems.map((item) => {
     const repository = repositoryMeta(item.repositoryUrl);
     return [item.repositoryUrl, repository.fullName] as const;
@@ -160,9 +164,9 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
               {user && applicationSlots.data && (
                 <div className="applicationSlotIndicator">
                   <div className="slotBar">
-                    <div className="slotBarFill" style={{ width: `${(applicationSlots.data.active / applicationSlots.data.max) * 100}%` }} />
+                    <div className="slotBarFill" style={{ width: `${(applicationSlots.data.pending / applicationSlots.data.maxPending) * 100}%` }} />
                   </div>
-                  <span className="slotLabel">{applicationSlots.data.active}/{applicationSlots.data.max} application slots used</span>
+                  <span className="slotLabel">{applicationSlots.data.pending}/{applicationSlots.data.maxPending} pending slots · {acceptedApplicationCount} accepted (no limit)</span>
                 </div>
               )}
               {!user ? (
