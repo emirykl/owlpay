@@ -53,8 +53,12 @@ export async function registerRoutes(
     if (!env.CRON_SECRET || !secretMatches(request.headers.authorization, `Bearer ${env.CRON_SECRET}`)) {
       return reply.code(401).send({ code: 'UNAUTHORIZED', message: !env.CRON_SECRET ? 'CRON_SECRET is not configured' : 'Cron authorization is required' });
     }
-    const items = await service.resolveDueBounties();
-    return { ok: true, processed: items.length, items };
+    const { resolved, failed } = await service.resolveDueBounties();
+    // Answer 200 even with failures: the run happened and the settled bounties
+    // are committed, so a 5xx would only make the scheduler repeat finished work.
+    // The error log is what surfaces the failures to monitoring.
+    if (failed.length > 0) request.log.error({ failed }, 'Some due bounties could not be resolved');
+    return { ok: failed.length === 0, processed: resolved.length, failed: failed.length, items: resolved, failures: failed };
   });
 
   app.get('/api/me', async (request) => {

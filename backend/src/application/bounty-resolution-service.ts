@@ -7,6 +7,11 @@ import type { VerificationPolicy } from './verification-policy.js';
 const APPEAL_PERIOD_MS = 2 * 24 * 60 * 60 * 1_000;
 const AUTO_PAYOUT_SCORE = 0.6;
 
+export interface BountyResolutionReport {
+  resolved: Array<{ id: string; status: Bounty['status']; resolution: Bounty['timeoutResolution'] }>;
+  failed: Array<{ id: string; reason: string }>;
+}
+
 /** Resolves elapsed contributor, maintainer-review and appeal windows. */
 export class BountyResolutionService {
   constructor(
@@ -16,21 +21,28 @@ export class BountyResolutionService {
     private readonly settlement: SettlementGateway
   ) {}
 
-  async resolveDueBounties(now = Date.now()) {
+  /**
+   * Settles every bounty whose clock has run out and reports both outcomes.
+   *
+   * Failures are returned rather than thrown because the work already committed
+   * is real: an unreachable pull request on one bounty must not erase the record
+   * that nine others were paid out. Throwing here used to turn a partial success
+   * into a blanket failure, which hid the payouts that did happen and told the
+   * scheduler to retry work that was already done.
+   */
+  async resolveDueBounties(now = Date.now()): Promise<BountyResolutionReport> {
     const bounties = await this.repository.listResolvable(new Date(now));
-    const results: Array<{ id: string; status: Bounty['status']; resolution: Bounty['timeoutResolution'] }> = [];
-    const errors: unknown[] = [];
+    const resolved: BountyResolutionReport['resolved'] = [];
+    const failed: BountyResolutionReport['failed'] = [];
     for (const bounty of bounties) {
       try {
         const updated = await this.resolveDueBounty(bounty, now);
-        if (updated) results.push({ id: updated.id, status: updated.status, resolution: updated.timeoutResolution });
+        if (updated) resolved.push({ id: updated.id, status: updated.status, resolution: updated.timeoutResolution });
       } catch (error) {
-        // One unavailable PR or settlement must not prevent other due bounties from resolving.
-        errors.push(error);
+        failed.push({ id: bounty.id, reason: error instanceof Error ? error.message : 'Unknown resolution failure' });
       }
     }
-    if (errors.length > 0) throw new AggregateError(errors, `${errors.length} due bounty resolution(s) failed`);
-    return results;
+    return { resolved, failed };
   }
 
   private async resolveDueBounty(bounty: Bounty, now: number) {

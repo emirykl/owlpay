@@ -110,8 +110,11 @@ export function buildApp(createFastify: typeof Fastify = Fastify) {
       if (resolutionRunning) return;
       resolutionRunning = true;
       try {
-        await service.resolveDueBounties();
+        const { failed } = await service.resolveDueBounties();
+        if (failed.length > 0) app.log.error({ failed }, 'Some due bounties could not be resolved');
       } catch (error) {
+        // Reached only when the run itself could not start, such as the bounty
+        // listing being unavailable. Individual bounties report through `failed`.
         app.log.error(error, 'Bounty resolution worker failed');
       } finally {
         resolutionRunning = false;

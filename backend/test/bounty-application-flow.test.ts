@@ -440,7 +440,7 @@ describe('bounty application and assignment flow', () => {
     await service.assign(draft.id, application.id, owner);
     await service.submit(draft.id, { pullRequestUrl: 'https://github.com/owlpay/demo/pull/42', developerAddress: application.developerAddress }, developers[1]!);
 
-    expect(await service.resolveDueBounties(new Date(deadline).getTime() + 6 * 86_400_000)).toEqual([]);
+    expect(await service.resolveDueBounties(new Date(deadline).getTime() + 6 * 86_400_000)).toEqual({ resolved: [], failed: [] });
     merged = true;
     await service.resolveDueBounties(new Date(deadline).getTime() + 7 * 86_400_000 + 1);
     expect(await service.get(draft.id)).toMatchObject({ status: 'PAID', timeoutResolution: 'AUTO_APPROVED', payoutTxHash: `0x${'7'.repeat(64)}` });
