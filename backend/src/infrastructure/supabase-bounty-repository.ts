@@ -127,6 +127,14 @@ export class SupabaseBountyRepository implements BountyRepository {
     return Boolean(data);
   }
 
+  async saveReviewPayment(bounty: Bounty): Promise<void> {
+    const { error } = await this.client
+      .from('bounties')
+      .update({ ...toReviewPaymentRow(bounty), updated_at: new Date().toISOString() })
+      .eq('id', bounty.id);
+    if (error) throw saveError(error);
+  }
+
   /**
    * Runs a write and retries it without `escrow_contract_address` when the
    * column is missing. Both write paths share this so an environment that has

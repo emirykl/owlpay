@@ -23,6 +23,16 @@ export interface BountyRepository {
    * to claim a state transition before an expensive or billable side effect.
    */
   saveIfStatus(bounty: Bounty, expectedStatus: BountyStatus): Promise<boolean>;
+  /**
+   * Persists only the columns the review purchase owns.
+   *
+   * Buying a review spans several gateway round trips, so the bounty read at
+   * the start of that flow is stale by the time it ends. Writing the whole row
+   * back would undo whatever landed meanwhile — a submission, an assignment, a
+   * maintainer decision. A payment and a delivery are independent facts, and
+   * narrowing the write to the payment columns lets both stand.
+   */
+  saveReviewPayment(bounty: Bounty): Promise<void>;
 }
 
 export interface ApplicationRepository {

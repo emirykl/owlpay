@@ -52,7 +52,8 @@ function repositoryOf(bounties: Bounty[]) {
     async findReviewPaymentConflict() { return false; },
     async get(id) { return bounties.find((item) => item.id === id); },
     async save(item) { saved.push(item); },
-    async saveIfStatus(item) { saved.push(item); return true; }
+    async saveIfStatus(item) { saved.push(item); return true; },
+    async saveReviewPayment(item) { saved.push(item); }
   };
   return { repository, saved };
 }
