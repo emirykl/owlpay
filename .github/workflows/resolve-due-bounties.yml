@@ -1,0 +1,54 @@
+name: Resolve due bounties
+
+# The hosting plan's own scheduler already calls this endpoint once a day, but
+# nothing reads its answer. This job exists to read it: a run that could not
+# settle every due bounty fails here, and a failed scheduled workflow is what
+# actually reaches a maintainer. Running more often also shortens how long a
+# refund can sit waiting.
+on:
+  schedule:
+    - cron: '30 */6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: resolve-due-bounties
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the resolution endpoint
+        env:
+          API_URL: ${{ secrets.RESOLUTION_API_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${API_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "RESOLUTION_API_URL or CRON_SECRET is not configured; skipping."
+            exit 0
+          fi
+
+          status=$(curl -sS --max-time 120 -o response.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${API_URL%/}/api/cron/resolve-due")
+
+          echo "HTTP ${status}"
+          cat response.json
+
+          if [ "${status}" != "200" ]; then
+            echo "::error::Resolution endpoint answered ${status}"
+            exit 1
+          fi
+
+          processed=$(jq -r '.processed // 0' response.json)
+          failed=$(jq -r '.failed // 0' response.json)
+          echo "resolved=${processed} failed=${failed}" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${failed}" != "0" ]; then
+            # The endpoint answers 200 on partial failure on purpose: the work
+            # that committed is real. Surfacing it is this job's whole point.
+            jq -r '.failures[] | "::error::bounty \(.id) could not be resolved: \(.reason)"' response.json
+            exit 1
+          fi

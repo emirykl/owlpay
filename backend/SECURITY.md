@@ -26,6 +26,18 @@ The contract and API are testnet software, not an audited production escrow.
 - a billable agent review claims the bounty before the model call, so concurrent
   requests cannot each spend the one purchased review
 
+## Failure visibility
+
+- a scheduled resolution run answers 200 even when individual bounties fail, so
+  the bounties it could not settle are written to `resolution_failures`
+  (migration 0012) and outlive the host's log retention
+- recording is never allowed to fail the run: the settlement work that already
+  committed is worth more than its audit trail
+- `.github/workflows/resolve-due-bounties.yml` calls the endpoint on a schedule
+  and fails the job when the answer reports failures, which is what turns an
+  unread log line into a notification. It needs the `RESOLUTION_API_URL` and
+  `CRON_SECRET` repository secrets and skips cleanly without them
+
 ## Accepted risks
 
 Deliberate for a testnet MVP. Each names what would make it unacceptable.
