@@ -56,13 +56,18 @@ function PaymentHarness() {
   return <span>{wallet.address ?? 'disconnected'}</span>;
 }
 
-async function connectedWallet() {
+async function connectedWallet(): Promise<PayOrder> {
   render(<WalletProvider><PaymentHarness /></WalletProvider>);
   await waitFor(() => {
     expect(screen.getByText(address)).toBeTruthy();
     expect(payGoatFlowOrder).not.toBeNull();
   });
-  return payGoatFlowOrder!;
+  // Read the callback at call time rather than capturing it here. The provider
+  // rebuilds it as the connection settles, and holding the first one races the
+  // effect that publishes the connected version: a stale closure still sees no
+  // wallet and rejects with "Connect your wallet first" instead of the guard
+  // the test is about.
+  return (input) => payGoatFlowOrder!(input);
 }
 
 describe('GOAT Flow order payment', () => {
