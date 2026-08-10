@@ -55,10 +55,16 @@ npm test
 npm run test:coverage
 npm run contract:compile
 npm run contract:test
+npm run contract:coverage
 ```
 
-CI runs typecheck, lint, coverage-gated unit tests, contract tests and a
-production-dependency audit for both packages. See [API.md](API.md) for the
+`test/OwlPayBounty.invariants.test.cjs` drives seeded random call sequences and
+asserts what must hold under any ordering: the contract holds exactly the escrow
+it still owes, a reward splits without remainder, and every bounty settles once.
+The seeds are fixed, so a failure replays exactly.
+
+CI runs typecheck, lint, coverage-gated unit tests, a production build, contract
+tests under coverage, and a production-dependency audit for both packages. See [API.md](API.md) for the
 HTTP endpoint and authentication reference.
 
 ## Testnet deployment
