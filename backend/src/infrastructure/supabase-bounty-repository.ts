@@ -233,16 +233,13 @@ function legacyEscrowContract(fundingTxHash: string | null) {
   return fundingTxHash ? LEGACY_ESCROW_BY_FUNDING_TX.get(fundingTxHash.toLowerCase()) : undefined;
 }
 
-function toRow(bounty: Bounty) {
+/**
+ * Every column the review purchase owns, and nothing else. Kept as one mapping
+ * so the full-row write and the payment-only write can never disagree about
+ * which columns those are.
+ */
+function toReviewPaymentRow(bounty: Bounty) {
   return {
-    id: bounty.id,
-    owner_user_id: bounty.ownerUserId ?? null,
-    owner_address: bounty.ownerAddress.toLowerCase(),
-    title: bounty.title,
-    description: bounty.description,
-    repository_url: bounty.repositoryUrl,
-    reward_amount: bounty.rewardAmount,
-    verification_budget: 0,
     review_plan: bounty.reviewPlan,
     review_price: bounty.reviewPrice,
     review_paid_amount: bounty.reviewPaidAmount,
@@ -259,7 +256,21 @@ function toRow(bounty: Bounty) {
     review_payment_proof: bounty.reviewPaymentProof ?? null,
     review_payment_pending_tx_hash: bounty.reviewPaymentPendingTxHash?.toLowerCase() ?? null,
     review_paid_at: bounty.reviewPaidAt ?? null,
-    review_consumed_at: bounty.reviewConsumedAt ?? null,
+    review_consumed_at: bounty.reviewConsumedAt ?? null
+  };
+}
+
+function toRow(bounty: Bounty) {
+  return {
+    id: bounty.id,
+    owner_user_id: bounty.ownerUserId ?? null,
+    owner_address: bounty.ownerAddress.toLowerCase(),
+    title: bounty.title,
+    description: bounty.description,
+    repository_url: bounty.repositoryUrl,
+    reward_amount: bounty.rewardAmount,
+    verification_budget: 0,
+    ...toReviewPaymentRow(bounty),
     revision_requests: bounty.revisionRequests,
     contributor_deadline: bounty.contributorDeadline,
     maintainer_review_deadline: bounty.maintainerReviewDeadline,
