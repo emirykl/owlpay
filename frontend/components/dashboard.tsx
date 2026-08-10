@@ -146,7 +146,6 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
           ))}
         </nav>
         <div className="sidebarNetwork"><span className={`statusDot ${network.data?.status.connected ? '' : 'offline'}`} /><div><strong>GOAT Testnet3</strong><small>{network.data?.status.connected ? 'Network connected' : 'Checking network'}</small></div></div>
-        <Link className="backToSite" href="/">← Back to website</Link>
       </aside>
 
       <div className="workspaceBody">

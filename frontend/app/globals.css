@@ -339,7 +339,6 @@ a { color: inherit; text-decoration: none; }
 .sidebarNetwork div { display: grid; gap: 4px; }
 .sidebarNetwork strong { font-size: 11px; }
 .sidebarNetwork small { color: var(--muted); font-size: 9px; }
-.backToSite { margin: 18px 10px 0; color: var(--muted); font-size: 10px; }
 .workspaceBody { min-width: 0; min-height: 100svh; overflow: visible; }
 .appHeader { height: 84px; position: sticky; z-index: 20; top: 0; padding: 0 34px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--line); background: rgba(240,241,237,.82); backdrop-filter: blur(22px); }
 .appHeaderTitle { min-width: 0; display: flex; align-items: baseline; gap: 10px; }
@@ -937,7 +936,7 @@ a { color: inherit; text-decoration: none; }
   .appNavigation { min-width: 0; margin: 0; display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; }
   .appNavigation::-webkit-scrollbar { display: none; }
   .appNavigation button { width: auto; flex: 0 0 auto; }
-  .sidebarNetwork,.backToSite { display: none; }
+  .sidebarNetwork { display: none; }
   .appHeader { position: static; height: 72px; padding: 0 28px; }
   .workspaceContent { width: min(100% - 56px,1180px); padding-top: 52px; }
   .workspaceContent.exploreWorkspace { width: min(100% - 56px,1320px); padding-top: 24px; }
