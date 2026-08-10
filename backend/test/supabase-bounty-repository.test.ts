@@ -137,6 +137,37 @@ describe('supabase bounty repository', () => {
     await expect(repository.get(draft.id)).resolves.toMatchObject({ status: 'OPEN' });
   });
 
+  it('writes a review payment without touching the rest of the row', async () => {
+    const { repository, supabase } = setup();
+    await repository.save(bounty());
+    // Stand in for a delivery that landed while the purchase was in flight.
+    Object.assign(supabase.tables.bounties![0]!, { status: 'SUBMITTED', submission: { commitSha: 'a'.repeat(40) } });
+
+    await repository.saveReviewPayment(bounty({
+      reviewPaymentStatus: 'PAID',
+      reviewPaidAmount: '1',
+      reviewPaymentTxHash: `0x${'A'.repeat(64)}`
+    }));
+
+    expect(supabase.tables.bounties![0]).toMatchObject({
+      status: 'SUBMITTED',
+      submission: { commitSha: 'a'.repeat(40) },
+      review_payment_status: 'PAID',
+      review_payment_tx_hash: `0x${'a'.repeat(64)}`
+    });
+  });
+
+  it('reports a replayed payment as a conflict on the narrow write too', async () => {
+    const { repository, supabase } = setup();
+    await repository.save(bounty());
+    supabase.failNext({ code: '23505', message: 'duplicate key' }, 'bounties');
+
+    await expect(repository.saveReviewPayment(bounty({ reviewPaymentTxHash: `0x${'a'.repeat(64)}` }))).rejects.toMatchObject({
+      code: 'PAYMENT_ALREADY_USED',
+      statusCode: 409
+    });
+  });
+
   it('turns unique violations into a payment replay conflict', async () => {
     const { repository, supabase } = setup();
     supabase.failNext({ code: '23505', message: 'duplicate key' }, 'bounties');
