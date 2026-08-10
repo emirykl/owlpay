@@ -10,12 +10,14 @@
 }
 
 * { box-sizing: border-box; }
-html { min-height: 100%; overflow-x: hidden; scroll-behavior: smooth; }
+/* `clip` rather than `hidden`: hidden on either axis turns the element into a
+   scroll container, and the page then scrolls on the viewport while sticky
+   children measure against a box that never moves, so they never stick. */
+html { min-height: 100%; overflow-x: clip; scroll-behavior: smooth; }
 body {
   min-height: 100%;
   margin: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow-x: clip;
   background: var(--paper);
   color: var(--ink);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
