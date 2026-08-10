@@ -125,6 +125,18 @@ describe('supabase bounty repository', () => {
     expect(supabase.tables.bounties![0]).not.toHaveProperty('escrow_contract_address');
   });
 
+  it('keeps the legacy fallback on the guarded write too', async () => {
+    const { repository, supabase } = setup();
+    const draft = bounty();
+    await repository.save(draft);
+    supabase.failNext({ message: "Could not find the 'escrow_contract_address' column" }, 'bounties');
+
+    // A guarded write is the only way a transition reaches the database, so an
+    // environment still missing migration 0010 has to survive it as well.
+    await expect(repository.saveIfStatus({ ...draft, status: 'OPEN' }, 'DRAFT')).resolves.toBe(true);
+    await expect(repository.get(draft.id)).resolves.toMatchObject({ status: 'OPEN' });
+  });
+
   it('turns unique violations into a payment replay conflict', async () => {
     const { repository, supabase } = setup();
     supabase.failNext({ code: '23505', message: 'duplicate key' }, 'bounties');
