@@ -2,7 +2,9 @@ import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist/**', 'artifacts/**', 'cache/**', '.vercel/**', '**/*.cjs'] },
+  // `coverage/` holds generated reports; solidity-coverage writes bundled
+  // vendor scripts into its HTML output that no lint rule should judge.
+  { ignores: ['dist/**', 'artifacts/**', 'cache/**', 'coverage/**', '.vercel/**', '**/*.cjs'] },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {

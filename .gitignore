@@ -2,6 +2,8 @@ node_modules/
 .next/
 dist/
 coverage/
+# solidity-coverage writes this next to the report directory
+coverage.json
 .env
 .env.local
 .env.*.local

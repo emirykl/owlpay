@@ -1,4 +1,5 @@
 require('@nomicfoundation/hardhat-toolbox');
+require('solidity-coverage');
 require('dotenv').config();
 
 const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
