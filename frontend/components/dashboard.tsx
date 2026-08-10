@@ -254,7 +254,7 @@ function MyApplicationCard({ application, bounty, now, onOpen, reduceMotion, cur
       <button className="myApplicationCardInner" onClick={onOpen}>
         <div className="myApplicationCardTop">
           <div className="marketplaceRepo">
-            <span className="marketplaceAvatar" role="img" aria-label={`${repository.owner} GitHub avatar`} style={{ backgroundImage: `url(${repository.avatarUrl})` }}>{repository.owner.slice(0, 1).toUpperCase()}</span>
+            <span className="marketplaceAvatar" role="img" aria-label={`${repository.owner} GitHub avatar`} style={{ backgroundImage: `url(${repository.avatarUrl})` }} />
             <strong>{repository.fullName}</strong>
           </div>
           <span className={`applicationState ${needsRevision ? 'revisionApplicationState' : `state-${application.status.toLowerCase()}`}`}>{needsRevision ? 'Action required' : application.status}</span>
@@ -286,7 +286,7 @@ function MarketplaceBountyCard({ bounty, now, onOpen, currentTokenSymbol }: { bo
   return (
     <motion.button className="marketplaceCard" onClick={onOpen} whileTap={{ scale: 0.995 }}>
       <div className="marketplaceCardTop">
-        <div className="marketplaceRepo"><span className="marketplaceAvatar" role="img" aria-label={`${repository.owner} GitHub avatar`} style={{ backgroundImage: `url(${repository.avatarUrl})` }}>{repository.owner.slice(0, 1).toUpperCase()}</span><strong>{repository.fullName}</strong></div>
+        <div className="marketplaceRepo"><span className="marketplaceAvatar" role="img" aria-label={`${repository.owner} GitHub avatar`} style={{ backgroundImage: `url(${repository.avatarUrl})` }} /><strong>{repository.fullName}</strong></div>
         <div className="marketplaceCardPills"><span className={`statusBadge status-${isClosed ? 'closed' : bounty.status.toLowerCase()}`}>{isClosed ? 'Closed' : statusLabels[bounty.status]}</span><span className="marketplaceReward">{bounty.rewardAmount} {bountyTokenSymbol(bounty, currentTokenSymbol)}</span></div>
       </div>
       <div className="marketplaceCardBody"><h2>{bounty.title}</h2><p>{bounty.description}</p></div>
