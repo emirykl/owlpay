@@ -6,6 +6,7 @@ import type { VerificationPolicy } from './verification-policy.js';
 import type { AuthUser } from './auth.js';
 import { BountyResolutionService } from './bounty-resolution-service.js';
 import { assertBountyOwner } from './bounty-ownership.js';
+import { commitTransition } from './bounty-transition.js';
 import { ReviewPaymentService } from './review-payment-service.js';
 import { defaultReviewConfig, type ReviewConfig } from './review-payment-policy.js';
 
@@ -193,7 +194,7 @@ export class BountyService {
       assignedAt: new Date().toISOString(),
       ...(assignmentTxHash ? { assignmentTxHash } : {})
     };
-    await this.repository.save(updated);
+    await commitTransition(this.repository, updated, bounty.status);
     await this.applications.resolveAssignment(id, applicationId);
     return updated;
   }
@@ -207,8 +208,7 @@ export class BountyService {
     }
     if (bounty.status !== 'DRAFT') throw new DomainError('Only a draft bounty can be funded');
     const updated: Bounty = { ...bounty, status: 'OPEN', onchainId, fundingTxHash };
-    await this.repository.save(updated);
-    return updated;
+    return commitTransition(this.repository, updated, bounty.status);
   }
 
   async prepareSubmission(id: string, input: SubmitWorkInput, actor: AuthUser) {
@@ -264,7 +264,7 @@ export class BountyService {
     delete updated.timeoutResolvedAt;
     delete updated.appealDeadline;
     delete updated.appealMessage;
-    await this.repository.save(updated);
+    await commitTransition(this.repository, updated, bounty.status);
     return { bounty: updated, evidence };
   }
 
@@ -284,8 +284,7 @@ export class BountyService {
       reviewConsumedAt: new Date().toISOString(),
       decision
     };
-    await this.repository.save(updated);
-    return updated;
+    return commitTransition(this.repository, updated, bounty.status);
   }
 
   async runAutomatedReview(id: string, actor: AuthUser) {
@@ -343,8 +342,7 @@ export class BountyService {
     const updated: Bounty = payoutTxHash
       ? { ...bounty, status: 'PAID', payoutTxHash }
       : { ...bounty, status: 'APPROVED' };
-    await this.repository.save(updated);
-    return updated;
+    return commitTransition(this.repository, updated, bounty.status);
   }
 
   async requestRevision(id: string, actor: AuthUser, input: RequestRevisionInput) {
@@ -388,8 +386,7 @@ export class BountyService {
       contributorDeadline,
       revisionExtensionUsed: bounty.revisionExtensionUsed || extensionGranted
     };
-    await this.repository.save(updated);
-    return updated;
+    return commitTransition(this.repository, updated, bounty.status);
   }
 
   async appealTimeoutResolution(id: string, actor: AuthUser, message: string) {
@@ -401,9 +398,10 @@ export class BountyService {
     if (Date.now() > new Date(bounty.appealDeadline).getTime()) throw new DomainError('The appeal window has ended', 409, 'APPEAL_WINDOW_ENDED');
     const normalized = message.trim();
     if (normalized.length < 20 || normalized.length > 2000) throw new DomainError('Appeal details must be between 20 and 2000 characters');
+    // The status does not move here, but guarding on it still stops an appeal
+    // from landing on a bounty the resolution worker has already settled.
     const updated: Bounty = { ...bounty, timeoutResolution: 'DISPUTED', appealMessage: normalized };
-    await this.repository.save(updated);
-    return updated;
+    return commitTransition(this.repository, updated, bounty.status);
   }
 
   async resolveDueBounties(now = Date.now()) {
@@ -414,8 +412,7 @@ export class BountyService {
     const bounty = await this.get(id);
     if (bounty.status !== 'APPROVED') throw new DomainError('Only an approved bounty can be paid', 409, 'NOT_APPROVED');
     const updated: Bounty = { ...bounty, status: 'PAID', payoutTxHash };
-    await this.repository.save(updated);
-    return updated;
+    return commitTransition(this.repository, updated, bounty.status);
   }
 
   async markRefunded(id: string, refundTxHash: string, actor: AuthUser) {
@@ -426,8 +423,7 @@ export class BountyService {
       throw new DomainError('This bounty is not eligible for an expired-delivery refund', 409, 'REFUND_NOT_AVAILABLE');
     }
     const updated: Bounty = { ...bounty, status: 'REFUNDED', refundTxHash };
-    await this.repository.save(updated);
-    return updated;
+    return commitTransition(this.repository, updated, bounty.status);
   }
 
   private assertOwner(bounty: Bounty, actorUserId: string) {
