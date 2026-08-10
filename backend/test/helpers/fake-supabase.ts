@@ -14,7 +14,7 @@ interface Result { data: unknown; error: FakeError | null; count?: number | null
 class FakeQuery implements PromiseLike<Result> {
   private operation: 'select' | 'insert' | 'update' | 'upsert' = 'select';
   private readonly filters: Array<(row: Row) => boolean> = [];
-  private payload: Row = {};
+  private payload: Row | Row[] = {};
   private orderBy?: { column: string; ascending: boolean };
   private rowLimit?: number;
   private countRequested = false;
@@ -28,7 +28,8 @@ class FakeQuery implements PromiseLike<Result> {
     this.countRequested = options?.count === 'exact';
     return this;
   }
-  insert(payload: Row) { this.operation = 'insert'; this.payload = payload; return this; }
+  // PostgREST accepts a single row or a batch; both reach here.
+  insert(payload: Row | Row[]) { this.operation = 'insert'; this.payload = payload; return this; }
   update(payload: Row) { this.operation = 'update'; this.payload = payload; return this; }
   upsert(payload: Row) { this.operation = 'upsert'; this.payload = payload; return this; }
   eq(column: string, value: unknown) { this.filters.push((row) => row[column] === value); return this; }
@@ -60,15 +61,17 @@ class FakeQuery implements PromiseLike<Result> {
     if (error) return { data: null, error };
 
     if (this.operation === 'insert') {
-      this.rows.push({ ...this.payload });
-      return { data: [{ ...this.payload }], error: null };
+      const inserted = (Array.isArray(this.payload) ? this.payload : [this.payload]).map((row) => ({ ...row }));
+      this.rows.push(...inserted);
+      return { data: inserted, error: null };
     }
 
     if (this.operation === 'upsert') {
-      const index = this.rows.findIndex((row) => row.id === this.payload.id);
-      if (index === -1) this.rows.push({ ...this.payload });
-      else this.rows[index] = { ...this.rows[index], ...this.payload };
-      return { data: [{ ...this.payload }], error: null };
+      const payload = this.payload as Row;
+      const index = this.rows.findIndex((row) => row.id === payload.id);
+      if (index === -1) this.rows.push({ ...payload });
+      else this.rows[index] = { ...this.rows[index], ...payload };
+      return { data: [{ ...payload }], error: null };
     }
 
     let matched = this.rows.filter((row) => this.filters.every((predicate) => predicate(row)));
@@ -81,7 +84,7 @@ class FakeQuery implements PromiseLike<Result> {
     }
     if (this.rowLimit !== undefined) matched = matched.slice(0, this.rowLimit);
     if (this.operation === 'update') {
-      for (const row of matched) Object.assign(row, this.payload);
+      for (const row of matched) Object.assign(row, this.payload as Row);
     }
 
     if (shape === 'many') return { data: matched, error: null, ...(this.countRequested ? { count: matched.length } : {}) };
