@@ -3,6 +3,7 @@ import { DomainError } from '../domain/errors.js';
 import type { Bounty } from '../domain/schemas.js';
 import type { BountyRepository, GitHubEvidenceProvider, SettlementGateway } from './ports.js';
 import type { VerificationPolicy } from './verification-policy.js';
+import { commitTransition } from './bounty-transition.js';
 
 const APPEAL_PERIOD_MS = 2 * 24 * 60 * 60 * 1_000;
 const AUTO_PAYOUT_SCORE = 0.6;
@@ -49,7 +50,7 @@ export class BountyResolutionService {
     if (['OPEN', 'ASSIGNED', 'REVISION_REQUIRED'].includes(bounty.status)
       && now > new Date(bounty.contributorDeadline).getTime()) {
       const expired: Bounty = { ...bounty, status: 'EXPIRED' };
-      await this.repository.save(expired);
+      await commitTransition(this.repository, expired, bounty.status);
       return expired;
     }
     if (bounty.timeoutResolution === 'AUTO_FAILED_PENDING' && bounty.appealDeadline && now > new Date(bounty.appealDeadline).getTime()) {
@@ -66,7 +67,7 @@ export class BountyResolutionService {
         timeoutResolvedAt: new Date(now).toISOString(),
         ...(refundTxHash ? { refundTxHash } : {})
       };
-      await this.repository.save(refunded);
+      await commitTransition(this.repository, refunded, bounty.status);
       return refunded;
     }
     if (!bounty.submission || !['SUBMITTED', 'VERIFYING', 'READY_FOR_REVIEW'].includes(bounty.status)) return null;
@@ -88,7 +89,7 @@ export class BountyResolutionService {
         timeoutResolvedAt: new Date(now).toISOString(),
         ...(payoutTxHash ? { payoutTxHash } : {})
       };
-      await this.repository.save(paid);
+      await commitTransition(this.repository, paid, bounty.status);
       return paid;
     }
 
@@ -100,7 +101,7 @@ export class BountyResolutionService {
         timeoutResolution: 'INCONCLUSIVE',
         timeoutResolvedAt: new Date(now).toISOString()
       };
-      await this.repository.save(unreviewed);
+      await commitTransition(this.repository, unreviewed, bounty.status);
       return unreviewed;
     }
 
@@ -142,7 +143,7 @@ export class BountyResolutionService {
           timeoutResolution: 'INCONCLUSIVE',
           timeoutResolvedAt: new Date(now).toISOString()
         };
-    await this.repository.save(unresolved);
+    await commitTransition(this.repository, unresolved, bounty.status);
     return unresolved;
   }
 }
