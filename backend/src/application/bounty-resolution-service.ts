@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { DomainError } from '../domain/errors.js';
 import type { Bounty } from '../domain/schemas.js';
-import type { BountyRepository, GitHubEvidenceProvider, SettlementGateway } from './ports.js';
+import type { BountyRepository, GitHubEvidenceProvider, ResolutionFailureLog, SettlementGateway } from './ports.js';
 import type { VerificationPolicy } from './verification-policy.js';
 import { commitTransition } from './bounty-transition.js';
 
@@ -19,7 +19,8 @@ export class BountyResolutionService {
     private readonly repository: BountyRepository,
     private readonly github: GitHubEvidenceProvider,
     private readonly policy: VerificationPolicy,
-    private readonly settlement: SettlementGateway
+    private readonly settlement: SettlementGateway,
+    private readonly failureLog?: ResolutionFailureLog
   ) {}
 
   /**
@@ -41,6 +42,16 @@ export class BountyResolutionService {
         if (updated) resolved.push({ id: updated.id, status: updated.status, resolution: updated.timeoutResolution });
       } catch (error) {
         failed.push({ id: bounty.id, reason: error instanceof Error ? error.message : 'Unknown resolution failure' });
+      }
+    }
+
+    if (failed.length > 0 && this.failureLog) {
+      // Recording is observability, not settlement. A failure to write it must
+      // never discard a report of work that already happened on chain.
+      try {
+        await this.failureLog.record(failed.map(({ id, reason }) => ({ bountyId: id, reason })), new Date(now));
+      } catch {
+        // The implementation is responsible for surfacing its own failure.
       }
     }
     return { resolved, failed };

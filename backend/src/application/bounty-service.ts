@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { DomainError } from '../domain/errors.js';
 import type { Bounty, BountyApplication, CreateApplicationInput, CreateBountyInput, RequestRevisionInput, ReviewPlan, RevisionRequest, SubmitWorkInput, VerificationInput } from '../domain/schemas.js';
-import type { ApplicationRepository, BountyRepository, GitHubEvidenceProvider, PullRequestEvidence, ReviewPaymentGateway, ReviewPaymentVerifier, SettlementGateway } from './ports.js';
+import type { ApplicationRepository, BountyRepository, GitHubEvidenceProvider, PullRequestEvidence, ResolutionFailureLog, ReviewPaymentGateway, ReviewPaymentVerifier, SettlementGateway } from './ports.js';
 import type { VerificationPolicy } from './verification-policy.js';
 import type { AuthUser } from './auth.js';
 import { BountyResolutionService } from './bounty-resolution-service.js';
@@ -32,9 +32,10 @@ export class BountyService {
     private readonly reviewPaymentGateway: ReviewPaymentGateway = unavailableReviewPaymentGateway,
     private readonly reviewPayments: ReviewPaymentVerifier = unavailableReviewPaymentVerifier,
     private readonly reviewConfig: ReviewConfig = defaultReviewConfig,
-    private readonly settlementConfig: SettlementConfig = defaultSettlementConfig
+    private readonly settlementConfig: SettlementConfig = defaultSettlementConfig,
+    private readonly failureLog?: ResolutionFailureLog
   ) {
-    this.resolutions = new BountyResolutionService(repository, github, policy, settlement);
+    this.resolutions = new BountyResolutionService(repository, github, policy, settlement, failureLog);
     this.reviewOrders = new ReviewPaymentService(repository, reviewPaymentGateway, reviewPayments, reviewConfig, (id) => this.get(id));
   }
 
