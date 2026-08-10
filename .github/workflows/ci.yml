@@ -60,6 +60,14 @@ jobs:
         working-directory: frontend
       - run: npm run test:coverage
         working-directory: frontend
+      # Unit tests import components directly, so nothing else here exercises the
+      # production build: the middleware wiring, the route manifest and the
+      # server bundle only take shape at build time. Runs without any
+      # NEXT_PUBLIC_* value on purpose — every read of one falls back, and a new
+      # read that cannot will fail here rather than on a deploy.
+      - name: Production build
+        run: npm run build
+        working-directory: frontend
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=moderate
         working-directory: frontend
