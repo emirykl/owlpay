@@ -13,7 +13,7 @@ The in-memory repository is retained for isolated local tests. Shared and produc
 ## Supabase setup
 
 1. Create a Supabase project.
-2. Run the files under `supabase/migrations` in numeric order in the SQL editor. Existing projects must apply every newer migration through `0011_review_payment_conflict_lookup.sql`.
+2. Run the files under `supabase/migrations` in numeric order in the SQL editor. Existing projects must apply every newer migration through `0012_resolution_failures.sql`. Until `0012` is applied the resolver keeps settling bounties and simply has nowhere to file the ones it could not.
 3. Enable GitHub under Authentication → Providers and copy the Supabase callback URL into the GitHub OAuth App.
 4. Set `PERSISTENCE_MODE=supabase`, `SUPABASE_URL` and the backend-only `SUPABASE_SECRET_KEY`.
 5. Generate a random `AGENT_API_KEY` with at least 24 characters.
