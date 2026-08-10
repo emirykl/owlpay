@@ -111,32 +111,41 @@ export class SupabaseBountyRepository implements BountyRepository {
   }
 
   async save(bounty: Bounty): Promise<void> {
-    const row = toRow(bounty);
-    const { error } = await this.client.from('bounties').upsert(row, { onConflict: 'id' });
-    if (!error) return;
-    // Keep deployments available while migration 0010 is being rolled out. Existing
-    // funding transactions still resolve to their historical contract below.
-    if (error.message.includes("'escrow_contract_address' column")) {
-      const legacyRow: Partial<BountyRow> = { ...row };
-      delete legacyRow.escrow_contract_address;
-      const { error: legacyError } = await this.client.from('bounties').upsert(legacyRow, { onConflict: 'id' });
-      if (!legacyError) return;
-      throw saveError(legacyError);
-    }
-    throw saveError(error);
+    await this.write(toRow(bounty), (row) => this.client.from('bounties').upsert(row, { onConflict: 'id' }));
   }
 
   async saveIfStatus(bounty: Bounty, expectedStatus: Bounty['status']): Promise<boolean> {
-    const row = toRow(bounty);
-    const { data, error } = await this.client
+    const data = await this.write(toRow(bounty), (row) => this.client
       .from('bounties')
       .update(row)
       .eq('id', bounty.id)
       .eq('status', expectedStatus)
       .select('id')
-      .maybeSingle();
-    if (error) throw saveError(error);
+      .maybeSingle());
+    // No row came back because the status guard did not match, which means
+    // another writer moved this bounty on since the caller read it.
     return Boolean(data);
+  }
+
+  /**
+   * Runs a write and retries it without `escrow_contract_address` when the
+   * column is missing. Both write paths share this so an environment that has
+   * not received migration 0010 yet keeps working on either of them; existing
+   * funding transactions still resolve to their historical contract.
+   */
+  private async write<T>(
+    row: BountyRow,
+    run: (row: Partial<BountyRow>) => PromiseLike<{ data?: T | null; error: { code?: string; message: string } | null }>
+  ): Promise<T | null | undefined> {
+    const { data, error } = await run(row);
+    if (!error) return data;
+    if (!error.message.includes("'escrow_contract_address' column")) throw saveError(error);
+
+    const legacyRow: Partial<BountyRow> = { ...row };
+    delete legacyRow.escrow_contract_address;
+    const legacy = await run(legacyRow);
+    if (legacy.error) throw saveError(legacy.error);
+    return legacy.data;
   }
 }
 
