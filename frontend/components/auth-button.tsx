@@ -40,6 +40,10 @@ export function AuthButton() {
                 try {
                   await signOut();
                   setMenuOpen(false);
+                } catch {
+                  // The session is still live, so leave the menu open for a
+                  // retry. Without this the rejection escapes the handler
+                  // entirely and surfaces as an unhandled promise rejection.
                 } finally {
                   setIsSigningOut(false);
                 }
