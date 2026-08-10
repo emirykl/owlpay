@@ -35,6 +35,18 @@ export interface BountyRepository {
   saveReviewPayment(bounty: Bounty): Promise<void>;
 }
 
+/**
+ * Durable record of bounties a scheduled run could not settle.
+ *
+ * A resolution run reports failures rather than throwing, so without somewhere
+ * to put them the only trace is a log line with the host's retention. An
+ * implementation must never throw: losing the record of a failure is bad, but
+ * failing the settlement run that produced it is worse.
+ */
+export interface ResolutionFailureLog {
+  record(failures: Array<{ bountyId: string; reason: string }>, runAt: Date): Promise<void>;
+}
+
 export interface ApplicationRepository {
   listByBounty(bountyId: string): Promise<BountyApplication[]>;
   listByDeveloper(developerUserId: string): Promise<BountyApplication[]>;
