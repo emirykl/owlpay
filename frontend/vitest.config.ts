@@ -16,17 +16,21 @@ export default defineConfig({
       // These record the current UI-test debt instead of hiding untested
       // components. Raise them as component tests are added.
       //
-      // The branch floor sits below the others on purpose. Covering a large,
-      // branch-heavy component raises the count of covered branches while
-      // raising the total faster, so the ratio can fall even as the tests get
-      // better: reaching into bounty-detail took covered branches from 248 to
-      // 369 and the percentage from 75 to 68. Judge this line by the absolute
-      // count moving up, not by the ratio alone.
+      // Read a falling branch ratio carefully before treating it as a
+      // regression: covering a large, branch-heavy component adds covered
+      // branches but adds to the total faster, so the percentage can drop while
+      // the tests genuinely improve. Reaching into bounty-detail took covered
+      // branches from 248 to 369 and the ratio from 75 to 68. Judge that line
+      // by the absolute count moving up as well.
+      //
+      // The function floor trails the rest because the untested components that
+      // remain are dense with small handlers, and one uncovered component costs
+      // far more here than it does in the statement count.
       thresholds: {
-        statements: 49,
-        branches: 68,
-        functions: 44,
-        lines: 49
+        statements: 71,
+        branches: 71,
+        functions: 50,
+        lines: 71
       }
     }
   }

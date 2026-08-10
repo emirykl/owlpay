@@ -11,10 +11,10 @@ export default defineConfig({
       // time; neither has behaviour a unit test can meaningfully assert.
       exclude: ['src/server.ts', 'src/config/env.ts'],
       thresholds: {
-        statements: 78,
-        branches: 60,
-        functions: 70,
-        lines: 78
+        statements: 82,
+        branches: 71,
+        functions: 78,
+        lines: 82
       }
     },
     env: {
