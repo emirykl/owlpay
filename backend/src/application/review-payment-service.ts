@@ -57,7 +57,7 @@ export class ReviewPaymentService {
         const clientTxHash = status.txHash ?? bounty.reviewPaymentPendingTxHash;
         const refreshed: Bounty = { ...bounty, reviewPaymentOrderStatus: status.status };
         if (clientTxHash) refreshed.reviewPaymentPendingTxHash = clientTxHash;
-        await this.repository.save(refreshed);
+        await this.repository.saveReviewPayment(refreshed);
         return { ...existingOrder, ...(clientTxHash ? { clientTxHash } : {}) };
       }
     }
@@ -74,7 +74,7 @@ export class ReviewPaymentService {
     delete pending.reviewPaymentOrder;
     delete pending.reviewPaymentProof;
     delete pending.reviewPaymentPendingTxHash;
-    await this.repository.save(pending);
+    await this.repository.saveReviewPayment(pending);
 
     const order = await this.gateway.createOrder({
       dappOrderId: intentId,
@@ -88,7 +88,7 @@ export class ReviewPaymentService {
       reviewPaymentOrderIds: uniqueValues([...bounty.reviewPaymentOrderIds, order.orderId]),
       reviewPaymentOrder: order
     };
-    await this.repository.save(updated);
+    await this.repository.saveReviewPayment(updated);
     return order;
   }
 
@@ -118,13 +118,13 @@ export class ReviewPaymentService {
       amount: expectedAmount
     });
     if (bounty.reviewPaymentPendingTxHash?.toLowerCase() !== txHash.toLowerCase()) {
-      await this.repository.save({ ...bounty, reviewPaymentPendingTxHash: txHash });
+      await this.repository.saveReviewPayment({ ...bounty, reviewPaymentPendingTxHash: txHash });
     }
 
     const status = await this.gateway.waitForConfirmation(orderId);
     assertConfirmedReviewOrder(status, bounty, txHash);
     if (!SETTLED_ORDER_STATUSES.includes(status.status)) {
-      await this.repository.save({ ...bounty, reviewPaymentPendingTxHash: txHash, reviewPaymentOrderStatus: status.status });
+      await this.repository.saveReviewPayment({ ...bounty, reviewPaymentPendingTxHash: txHash, reviewPaymentOrderStatus: status.status });
       throw new DomainError(`GOAT Flow payment ended with status ${status.status}`, 409, 'PAYMENT_NOT_CONFIRMED');
     }
     const proof = await this.gateway.getOrderProof(orderId);
@@ -142,8 +142,11 @@ export class ReviewPaymentService {
       reviewPaidAt: new Date().toISOString()
     };
     delete updated.reviewPaymentPendingTxHash;
-    await this.repository.save(updated);
-    return updated;
+    await this.repository.saveReviewPayment(updated);
+    // Read the row back rather than returning the snapshot this flow started
+    // from: the payment columns are now correct in it, but everything else may
+    // have moved while the gateway was being waited on.
+    return this.loadBounty(id);
   }
 
   private assertConfigured() {
