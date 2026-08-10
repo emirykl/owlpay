@@ -286,7 +286,7 @@ export function BountyDetail({ initialBounty, onClose }: { initialBounty: Bounty
             <div className="detailSectionTitle"><h3>Applications</h3><span className="sectionCount">{applications.data?.items.length ?? 0}</span></div>
             {applications.isLoading ? <div className="loadingRows"><i /><i /></div> : applications.data?.items.length === 0 ? <p className="inlineNotice applicationEmpty">No applications yet.</p> : (
               <div className="candidateList">{applications.data?.items.map((application) => <article className="candidateCard" key={application.id}>
-                <span className="candidateAvatar" style={application.developerGithubAvatarUrl ? { backgroundImage: `url(${application.developerGithubAvatarUrl})` } : undefined}>{application.developerGithubLogin.slice(0, 1).toUpperCase()}</span>
+                <span className="candidateAvatar" style={application.developerGithubAvatarUrl ? { backgroundImage: `url(${application.developerGithubAvatarUrl})` } : undefined}>{application.developerGithubAvatarUrl ? '' : application.developerGithubLogin.slice(0, 1).toUpperCase()}</span>
                 <div><strong>@{application.developerGithubLogin}</strong><p>{application.message}</p><small>{application.developerAddress.slice(0, 7)}…{application.developerAddress.slice(-5)}</small></div>
                 {application.status === 'PENDING' ? <button className="secondaryButton" onClick={() => assignMutation.mutate(application)} disabled={assignMutation.isPending || bounty.status !== 'OPEN'}>{assignMutation.isPending ? 'Assigning…' : 'Assign bounty'}</button> : <span className={`applicationState state-${application.status.toLowerCase()}`}>{application.status}</span>}
               </article>)}</div>
