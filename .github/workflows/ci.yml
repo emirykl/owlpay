@@ -35,8 +35,10 @@ jobs:
         working-directory: backend
       - run: npm run test:coverage
         working-directory: backend
-      - name: Contract tests
-        run: npx hardhat test
+      # Coverage runs the same suite against an instrumented build, so it
+      # replaces the plain test run rather than adding to it.
+      - name: Contract tests and coverage
+        run: npm run contract:coverage
         working-directory: backend
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=moderate
