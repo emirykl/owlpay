@@ -190,7 +190,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
                   ) : visibleItems.length === 0 ? (
                     <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
                   ) : (
-                    <div className="marketplaceGrid">{visibleItems.map((bounty) => <MarketplaceBountyCard bounty={bounty} key={bounty.id} now={now} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} currentTokenSymbol={rewardTokenSymbol} />)}</div>
+                    <div className="marketplaceGrid">{visibleItems.map((bounty) => <MarketplaceBountyCard bounty={bounty} key={bounty.id} now={now} onOpen={() => setSelectedBounty(bounty)} currentTokenSymbol={rewardTokenSymbol} />)}</div>
                   )}
                 </div>
 
@@ -214,7 +214,7 @@ export function Dashboard({ initialIntent, initialView }: { initialIntent?: 'cre
               ) : visibleItems.length === 0 ? (
                 <div className="marketplaceEmpty"><EmptyView view={view} connected={Boolean(address)} onCreate={() => setCreating(true)} onExplore={() => setView('explore')} /></div>
               ) : (
-                <div className="marketplaceGrid">{visibleItems.map((bounty) => <MarketplaceBountyCard bounty={bounty} key={bounty.id} now={now} onOpen={() => setSelectedBounty(bounty)} reduceMotion={reduceMotion} currentTokenSymbol={rewardTokenSymbol} />)}</div>
+                <div className="marketplaceGrid">{visibleItems.map((bounty) => <MarketplaceBountyCard bounty={bounty} key={bounty.id} now={now} onOpen={() => setSelectedBounty(bounty)} currentTokenSymbol={rewardTokenSymbol} />)}</div>
               )}
             </section>
           )}
@@ -277,14 +277,14 @@ function MyApplicationCard({ application, bounty, now, onOpen, reduceMotion, cur
   );
 }
 
-function MarketplaceBountyCard({ bounty, now, onOpen, reduceMotion, currentTokenSymbol }: { bounty: Bounty; now: number; onOpen: () => void; reduceMotion: boolean | null; currentTokenSymbol: string }) {
+function MarketplaceBountyCard({ bounty, now, onOpen, currentTokenSymbol }: { bounty: Bounty; now: number; onOpen: () => void; currentTokenSymbol: string }) {
   const repository = repositoryMeta(bounty.repositoryUrl);
   const applicants = bounty.applicantCount;
   const deadline = getBountyDeadlineState(bounty.deadline, now);
   const isClosed = bounty.status === 'OPEN' && deadline.closed;
 
   return (
-    <motion.button className="marketplaceCard" onClick={onOpen} whileHover={reduceMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.995 }}>
+    <motion.button className="marketplaceCard" onClick={onOpen} whileTap={{ scale: 0.995 }}>
       <div className="marketplaceCardTop">
         <div className="marketplaceRepo"><span className="marketplaceAvatar" role="img" aria-label={`${repository.owner} GitHub avatar`} style={{ backgroundImage: `url(${repository.avatarUrl})` }}>{repository.owner.slice(0, 1).toUpperCase()}</span><strong>{repository.fullName}</strong></div>
         <div className="marketplaceCardPills"><span className={`statusBadge status-${isClosed ? 'closed' : bounty.status.toLowerCase()}`}>{isClosed ? 'Closed' : statusLabels[bounty.status]}</span><span className="marketplaceReward">{bounty.rewardAmount} {bountyTokenSymbol(bounty, currentTokenSymbol)}</span></div>
